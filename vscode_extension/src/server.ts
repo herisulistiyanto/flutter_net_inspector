@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
-import { WebSocketServer, WebSocket } from 'ws';
-import { IncomingMessage } from 'http';
+import * as vscode from "vscode";
+import { WebSocketServer, WebSocket } from "ws";
+import { IncomingMessage } from "http";
 
 export interface NetworkEntry {
   id: string;
@@ -38,9 +38,7 @@ export class InspectorServer {
   constructor(port: number = 9555, maxEntries: number = 500) {
     this.port = port;
     this.maxEntries = maxEntries;
-    this.statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left, 100
-    );
+    this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.updateStatusBar(false);
   }
 
@@ -65,42 +63,40 @@ export class InspectorServer {
       try {
         this.wss = new WebSocketServer({ port: this.port });
 
-        this.wss.on('listening', () => {
+        this.wss.on("listening", () => {
           this.updateStatusBar(true);
-          vscode.window.showInformationMessage(
-            `Net Inspector server running on port ${this.port}`
-          );
+          vscode.window.showInformationMessage(`Net Inspector server running on port ${this.port}`);
           resolve();
         });
 
-        this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+        this.wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
           this.clients.add(ws);
           this.updateStatusBar(true);
           console.log(`[NetInspector] Client connected from ${req.socket.remoteAddress}`);
 
-          ws.on('message', (data: Buffer) => {
+          ws.on("message", (data: Buffer) => {
             try {
               const message = JSON.parse(data.toString());
               this.handleFlutterMessage(message);
             } catch (e) {
-              console.error('[NetInspector] Invalid message:', e);
+              console.error("[NetInspector] Invalid message:", e);
             }
           });
 
-          ws.on('close', () => {
+          ws.on("close", () => {
             this.clients.delete(ws);
             this.updateStatusBar(true);
-            console.log('[NetInspector] Client disconnected');
+            console.log("[NetInspector] Client disconnected");
           });
 
-          ws.on('error', (err: Error) => {
-            console.error('[NetInspector] Client error:', err.message);
+          ws.on("error", (err: Error) => {
+            console.error("[NetInspector] Client error:", err.message);
             this.clients.delete(ws);
           });
         });
 
-        this.wss.on('error', (err: Error) => {
-          if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+        this.wss.on("error", (err: Error) => {
+          if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
             vscode.window.showErrorMessage(
               `Port ${this.port} is already in use. Change it in settings.`
             );
@@ -154,8 +150,8 @@ export class InspectorServer {
    */
   addMockRule(rule: Record<string, unknown>) {
     this.broadcast({
-      type: 'mock_rule_add',
-      id: rule['id'] || `rule_${Date.now()}`,
+      type: "mock_rule_add",
+      id: rule["id"] || `rule_${Date.now()}`,
       payload: rule,
       timestamp: new Date().toISOString(),
     });
@@ -166,7 +162,7 @@ export class InspectorServer {
    */
   removeMockRule(ruleId: string) {
     this.broadcast({
-      type: 'mock_rule_remove',
+      type: "mock_rule_remove",
       id: ruleId,
       payload: { ruleId },
       timestamp: new Date().toISOString(),
@@ -178,7 +174,7 @@ export class InspectorServer {
    */
   modifyResponse(requestId: string, responseData: Record<string, unknown>) {
     this.broadcast({
-      type: 'modify_response',
+      type: "modify_response",
       id: requestId,
       payload: {
         requestId,
@@ -193,7 +189,7 @@ export class InspectorServer {
    */
   resumeResponse(requestId: string) {
     this.broadcast({
-      type: 'resume_response',
+      type: "resume_response",
       id: requestId,
       payload: { requestId },
       timestamp: new Date().toISOString(),
@@ -205,7 +201,7 @@ export class InspectorServer {
    */
   replayRequest(requestData: Record<string, unknown>) {
     this.broadcast({
-      type: 'replay_request',
+      type: "replay_request",
       id: `replay_${Date.now()}`,
       payload: requestData,
       timestamp: new Date().toISOString(),
@@ -246,60 +242,62 @@ export class InspectorServer {
     const { type, id, payload } = message;
 
     switch (type) {
-      case 'request_captured': {
+      case "request_captured": {
         // Enforce max entries
         if (this.entries.size >= this.maxEntries) {
           const firstKey = this.entries.keys().next().value;
-          if (firstKey) { this.entries.delete(firstKey); }
+          if (firstKey) {
+            this.entries.delete(firstKey);
+          }
         }
 
         const entry: NetworkEntry = {
-          id: payload['id'] as string,
-          method: payload['method'] as string,
-          url: payload['url'] as string,
-          requestHeaders: (payload['headers'] as Record<string, string>) || {},
-          requestBody: payload['body'],
-          queryParameters: (payload['queryParameters'] as Record<string, string>) || {},
-          requestTimestamp: payload['timestamp'] as string || new Date().toISOString(),
+          id: payload["id"] as string,
+          method: payload["method"] as string,
+          url: payload["url"] as string,
+          requestHeaders: (payload["headers"] as Record<string, string>) || {},
+          requestBody: payload["body"],
+          queryParameters: (payload["queryParameters"] as Record<string, string>) || {},
+          requestTimestamp: (payload["timestamp"] as string) || new Date().toISOString(),
         };
         this.entries.set(entry.id, entry);
         break;
       }
 
-      case 'response_captured': {
-        const requestId = payload['requestId'] as string;
+      case "response_captured": {
+        const requestId = payload["requestId"] as string;
         const entry = this.entries.get(requestId);
         if (entry) {
-          entry.statusCode = payload['statusCode'] as number;
-          entry.responseHeaders = payload['headers'] as Record<string, string>;
-          entry.responseBody = payload['body'];
-          entry.durationMs = payload['durationMs'] as number;
-          entry.mocked = payload['mocked'] as boolean || false;
-          entry.breakpoint = payload['breakpoint'] as boolean || false;
+          entry.statusCode = payload["statusCode"] as number;
+          entry.responseHeaders = payload["headers"] as Record<string, string>;
+          entry.responseBody = payload["body"];
+          entry.durationMs = payload["durationMs"] as number;
+          entry.mocked = (payload["mocked"] as boolean) || false;
+          entry.breakpoint = (payload["breakpoint"] as boolean) || false;
         }
         break;
       }
 
-      case 'error_captured': {
-        const reqId = payload['requestId'] as string;
+      case "error_captured": {
+        const reqId = payload["requestId"] as string;
         const entry = this.entries.get(reqId);
         if (entry) {
-          entry.statusCode = payload['statusCode'] as number | undefined;
-          entry.durationMs = payload['durationMs'] as number;
+          entry.statusCode = payload["statusCode"] as number | undefined;
+          entry.durationMs = payload["durationMs"] as number;
           entry.error = {
-            type: payload['type'] as string,
-            message: payload['message'] as string,
+            type: payload["type"] as string,
+            message: payload["message"] as string,
           };
         }
         break;
       }
 
-      case 'app_connected':
+      case "app_connected":
         console.log(`[NetInspector] App handshake: ${JSON.stringify(payload)}`);
         break;
 
-      case 'app_disconnected':
-        console.log('[NetInspector] App disconnected gracefully');
+      case "app_disconnected":
+        console.log("[NetInspector] App disconnected gracefully");
         break;
     }
 
@@ -310,14 +308,14 @@ export class InspectorServer {
   private updateStatusBar(running: boolean) {
     if (running) {
       const count = this.clients.size;
-      this.statusBarItem.text = `$(globe) Inspector: ${count} app${count !== 1 ? 's' : ''}`;
+      this.statusBarItem.text = `$(globe) Inspector: ${count} app${count !== 1 ? "s" : ""}`;
       this.statusBarItem.tooltip = `Net Inspector running on port ${this.port}`;
       this.statusBarItem.backgroundColor = undefined;
     } else {
-      this.statusBarItem.text = '$(globe) Inspector: off';
-      this.statusBarItem.tooltip = 'Click to start Net Inspector';
+      this.statusBarItem.text = "$(globe) Inspector: off";
+      this.statusBarItem.tooltip = "Click to start Net Inspector";
     }
-    this.statusBarItem.command = 'flutterNetInspector.open';
+    this.statusBarItem.command = "flutterNetInspector.open";
     this.statusBarItem.show();
   }
 
