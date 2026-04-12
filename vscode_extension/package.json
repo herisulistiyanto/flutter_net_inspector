@@ -7,8 +7,18 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Debuggers", "Other"],
-  "keywords": ["flutter", "dio", "network", "inspector", "mock", "flipper"],
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "flutter",
+    "dio",
+    "network",
+    "inspector",
+    "mock",
+    "flipper"
+  ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -61,14 +71,26 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "package:dev": "node esbuild.js",
+    "clean": "node -e \"const fs=require('fs');const p=require('path');['out'].forEach(d=>{if(fs.existsSync(d))fs.rmSync(d,{recursive:true})});fs.readdirSync('.').filter(f=>f.endsWith('.vsix')).forEach(f=>fs.unlinkSync(f));console.log('Cleaned')\"",
+    "typecheck": "tsc --noEmit",
+    "prebuild:vsix": "npm run clean && npm run typecheck",
+    "build:vsix": "npm run package && npx vsce package --no-dependencies --allow-missing-repository",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.0",
+    "esbuild": "^0.28.0",
+    "prettier": "^3.8.2",
     "typescript": "^5.3.0"
   },
   "dependencies": {
