@@ -1,0 +1,77 @@
+{
+  "name": "flutter-net-inspector",
+  "displayName": "Flutter Net Inspector",
+  "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
+  "version": "0.0.1",
+  "publisher": "kjokkenkoddinger",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Debuggers", "Other"],
+  "keywords": ["flutter", "dio", "network", "inspector", "mock", "flipper"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "flutterNetInspector.open",
+        "title": "Flutter Net Inspector: Open Dashboard"
+      },
+      {
+        "command": "flutterNetInspector.startServer",
+        "title": "Flutter Net Inspector: Start Server"
+      },
+      {
+        "command": "flutterNetInspector.stopServer",
+        "title": "Flutter Net Inspector: Stop Server"
+      },
+      {
+        "command": "flutterNetInspector.clearTraffic",
+        "title": "Flutter Net Inspector: Clear Traffic"
+      }
+    ],
+    "configuration": {
+      "title": "Flutter Net Inspector",
+      "properties": {
+        "flutterNetInspector.port": {
+          "type": "number",
+          "default": 9555,
+          "description": "WebSocket server port"
+        },
+        "flutterNetInspector.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start the WebSocket server when the extension activates"
+        },
+        "flutterNetInspector.maxEntries": {
+          "type": "number",
+          "default": 500,
+          "description": "Maximum number of network entries to keep in memory"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "flutterNetInspector",
+          "title": "Net Inspector",
+          "icon": "$(globe)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none';
+      style-src {{cspSource}} 'nonce-{{nonce}}';
+      script-src 'nonce-{{nonce}}';">
+  <title>Net Inspector</title>
+  <style nonce="{{nonce}}">
+    :root {
+      --bg: var(--vscode-editor-background);
+      --bg-secondary: var(--vscode-sideBar-background, #1e1e1e);
+      --fg: var(--vscode-editor-foreground);
+      --fg-muted: var(--vscode-descriptionForeground);
+      --border: var(--vscode-panel-border);
+      --accent: var(--vscode-button-background);
+      --accent-fg: var(--vscode-button-foreground);
+      --accent-hover: var(--vscode-button-hoverBackground);
+      --input-bg: var(--vscode-input-background);
+      --input-border: var(--vscode-input-border);
+      --input-fg: var(--vscode-input-foreground, var(--fg));
+      --badge-bg: var(--vscode-badge-background);
+      --badge-fg: var(--vscode-badge-foreground);
+      --list-hover: var(--vscode-list-hoverBackground);
+      --list-active: var(--vscode-list-activeSelectionBackground);
+      --list-active-fg: var(--vscode-list-activeSelectionForeground, var(--fg));
+      --tab-active-border: var(--vscode-tab-activeBorderTop, var(--accent));
+      --scrollbar: var(--vscode-scrollbarSlider-background);
+      --success: #4ec9b0;
+      --info: #569cd6;
+      --warn: #cca700;
+      --error: #f14c4c;
+      --mocked: #b07dd6;
+      --json-key: #9cdcfe;
+      --json-string: #ce9178;
+      --json-number: #b5cea8;
+      --json-bool: #569cd6;
+      --json-null: #808080;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+      font-size: 13px;
+      color: var(--fg);
+      background: var(--bg);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* ---- Layout ---- */
+    .app {
+      display: grid;
+      grid-template-rows: 40px 32px 1fr;
+      grid-template-columns: 1fr;
+      height: 100vh;
+    }
+    .app.detail-open {
+      grid-template-columns: 1fr 420px;
+    }
+    .app.detail-open .toolbar { grid-column: 1 / -1; }
+    .app.detail-open .tab-bar { grid-column: 1 / 2; }
+    .app.detail-open .request-list { grid-column: 1 / 2; }
+    .app.detail-open .detail-panel { grid-column: 2 / 3; grid-row: 2 / 4; }
+
+    /* ---- Toolbar ---- */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      grid-column: 1 / -1;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--fg-muted);
+      min-width: 100px;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--error);
+      flex-shrink: 0;
+    }
+    .status-dot.on { background: var(--success); }
+
+    .search-box {
+      flex: 1;
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 3px 8px 3px 26px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--input-fg);
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none;
+    }
+    .search-box input:focus { border-color: var(--accent); }
+    .search-box::before {
+      content: "⌕";
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--fg-muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .toolbar-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin: 0 2px;
+    }
+
+    .btn {
+      padding: 3px 10px;
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: inherit;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn:hover { background: var(--list-hover); }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: var(--accent-hover); opacity: 0.9; }
+    .btn-danger { color: var(--error); border-color: var(--error); }
+    .btn-danger:hover { background: rgba(241, 76, 76, 0.1); }
+    .btn-sm { padding: 2px 6px; font-size: 10px; }
+
+    /* ---- Tab bar ---- */
+    .tab-bar {
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      font-size: 11px;
+      overflow-x: auto;
+    }
+    .tab {
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: var(--fg-muted);
+      white-space: nowrap;
+      user-select: none;
+    }
+    .tab:hover { color: var(--fg); background: var(--list-hover); }
+    .tab.active {
+      color: var(--fg);
+      border-bottom-color: var(--tab-active-border);
+    }
+    .tab .count {
+      font-size: 10px;
+      background: var(--badge-bg);
+      color: var(--badge-fg);
+      padding: 0 5px;
+      border-radius: 8px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    /* ---- Request list ---- */
+    .request-list {
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .request-list::-webkit-scrollbar { width: 8px; }
+    .request-list::-webkit-scrollbar-thumb {
+      background: var(--scrollbar);
+      border-radius: 4px;
+    }
+
+    .list-header {
+      display: grid;
+      grid-template-columns: 50px 56px 1fr 64px 56px;
+      padding: 4px 10px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--fg-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .req-row {
+      display: grid;
+      grid-template-columns: 50px 56px 1fr 64px 56px;
+      padding: 5px 10px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+      cursor: pointer;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .req-row:hover { background: var(--list-hover); }
+    .req-row.selected {
+      background: var(--list-active);
+      color: var(--list-active-fg);
+    }
+    .req-row.has-error { border-left: 3px solid var(--error); padding-left: 7px; }
+    .req-row.is-mocked { border-left: 3px solid var(--mocked); padding-left: 7px; }
+    .req-row.is-breakpoint {
+      border-left: 3px solid var(--warn);
+      padding-left: 7px;
+      animation: bp-pulse 2s ease-in-out infinite;
+    }
+    @keyframes bp-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+    .method {
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.3px;
+    }
+    .method.GET  { color: var(--success); }
+    .method.POST { color: var(--info); }
+    .method.PUT  { color: var(--warn); }
+    .method.DELETE { color: var(--error); }
+    .method.PATCH { color: #d19a66; }
+
+    .status-code { font-weight: 600; font-size: 11px; }
+    .status-code.s2 { color: var(--success); }
+    .status-code.s3 { color: var(--warn); }
+    .status-code.s4 { color: var(--error); }
+    .status-code.s5 { color: var(--error); }
+    .status-code.pending { color: var(--fg-muted); }
+
+    .url-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .url-path { opacity: 0.9; }
+
+    .pill {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .pill-mock { background: var(--mocked); color: #fff; }
+    .pill-bp { background: var(--warn); color: #000; }
+
+    .duration { color: var(--fg-muted); font-size: 11px; text-align: right; }
+    .time { color: var(--fg-muted); font-size: 10px; }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--fg-muted);
+      gap: 8px;
+      padding: 40px;
+      text-align: center;
+    }
+    .empty-state .icon { font-size: 32px; opacity: 0.4; }
+    .empty-state p { max-width: 300px; line-height: 1.5; }
+
+    /* ---- Detail panel ---- */
+    .detail-panel {
+      display: none;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .detail-panel.open { display: flex; }
+
+    .detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      gap: 8px;
+      min-height: 36px;
+    }
+    .detail-header-title {
+      font-weight: 600;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-tab {
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 11px;
+      border-bottom: 2px solid transparent;
+      color: var(--fg-muted);
+    }
+    .detail-tab:hover { color: var(--fg); }
+    .detail-tab.active {
+      color: var(--fg);
+      border-bottom-color: var(--tab-active-border);
+      font-weight: 500;
+    }
+
+    .detail-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .detail-body::-webkit-scrollbar { width: 8px; }
+    .detail-body::-webkit-scrollbar-thumb {
+      background: var(--scrollbar);
+      border-radius: 4px;
+    }
+
+    .detail-section {
+      margin-bottom: 16px;
+    }
+    .detail-section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--fg-muted);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .detail-section-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* JSON viewer */
+    .json-view {
+      font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Fira Code', monospace);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      tab-size: 2;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      overflow-x: auto;
+    }
+    .jk { color: var(--json-key); }      /* key */
+    .js { color: var(--json-string); }   /* string */
+    .jn { color: var(--json-number); }   /* number */
+    .jb { color: var(--json-bool); }     /* boolean */
+    .jnull { color: var(--json-null); }  /* null */
+    .jp { color: var(--fg-muted); }      /* punctuation */
+
+    /* Header table */
+    .header-table {
+      width: 100%;
+      font-size: 12px;
+      border-collapse: collapse;
+    }
+    .header-table td {
+      padding: 3px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+      vertical-align: top;
+    }
+    .header-table td:first-child {
+      font-weight: 500;
+      white-space: nowrap;
+      width: 140px;
+      color: var(--json-key);
+    }
+    .header-table td:last-child {
+      word-break: break-all;
+    }
+
+    /* ---- Mock rules panel ---- */
+    .mock-panel {
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .mock-rule-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .mock-rule-card .rule-info { flex: 1; }
+    .mock-rule-card .rule-pattern {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+      color: var(--json-string);
+      word-break: break-all;
+    }
+    .mock-rule-card .rule-meta {
+      font-size: 10px;
+      color: var(--fg-muted);
+      margin-top: 4px;
+      display: flex;
+      gap: 8px;
+    }
+
+    /* ---- Mock editor overlay ---- */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .overlay.open { display: flex; }
+    .modal {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 560px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-header h3 { font-size: 14px; font-weight: 500; }
+    .modal-body { padding: 16px; }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .form-row {
+      margin-bottom: 10px;
+    }
+    .form-label {
+      display: block;
+      font-size: 11px;
+      color: var(--fg-muted);
+      margin-bottom: 3px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 5px 8px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--input-fg);
+      font-family: inherit;
+      font-size: 12px;
+      border-radius: 4px;
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--accent);
+    }
+    .form-textarea {
+      font-family: var(--vscode-editor-font-family, monospace);
+      min-height: 140px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    /* Quick mock presets */
+    .preset-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .preset-btn {
+      padding: 2px 8px;
+      font-size: 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg-muted);
+    }
+    .preset-btn:hover { background: var(--list-hover); color: var(--fg); }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="status-indicator">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Waiting...</span>
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <div class="search-box">
+        <input type="text" id="filterInput" placeholder="Filter by URL, method, or status code..."
+          oninput="applyFilter()">
+      </div>
+
+      <div class="toolbar-sep"></div>
+
+      <button class="btn btn-sm" onclick="clearTraffic()" title="Clear all entries">
+        Clear
+      </button>
+      <button class="btn btn-sm btn-primary" onclick="openMockEditor()" title="Add new mock rule">
+        + Mock
+      </button>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <div class="tab active" data-tab="all" onclick="switchMainTab(this, 'all')">
+        All <span class="count" id="countAll">0</span>
+      </div>
+      <div class="tab" data-tab="xhr" onclick="switchMainTab(this, 'xhr')">
+        XHR
+      </div>
+      <div class="tab" data-tab="mocked" onclick="switchMainTab(this, 'mocked')">
+        Mocked <span class="count" id="countMocked">0</span>
+      </div>
+      <div class="tab" data-tab="errors" onclick="switchMainTab(this, 'errors')">
+        Errors <span class="count" id="countErrors">0</span>
+      </div>
+      <div class="tab" data-tab="rules" onclick="switchMainTab(this, 'rules')">
+        Mock Rules <span class="count" id="countRules">0</span>
+      </div>
+    </div>
+
+    <!-- Request list -->
+    <div class="request-list" id="requestList">
+      <div class="empty-state">
+        <div class="icon">◎</div>
+        <p>No network requests captured yet.<br>Start your Flutter app with the interceptor connected.</p>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-header">
+        <span class="detail-header-title" id="detailTitle">—</span>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-sm" id="btnReplay" onclick="replayRequest()" style="display:none">
+            ↻ Replay
+          </button>
+          <button class="btn btn-sm" id="btnResume" onclick="resumeBreakpoint()"
+            style="display:none;border-color:var(--warn);color:var(--warn)">
+            ▶ Resume
+          </button>
+          <button class="btn btn-sm" id="btnModify" onclick="openModifyFromDetail()"
+            style="display:none;border-color:var(--mocked);color:var(--mocked)">
+            ✎ Modify
+          </button>
+          <button class="btn btn-sm" onclick="closeDetail()" style="opacity:0.6">✕</button>
+        </div>
+      </div>
+      <div class="detail-tabs">
+        <div class="detail-tab active" onclick="switchDetailTab(this, 'overview')">Overview</div>
+        <div class="detail-tab" onclick="switchDetailTab(this, 'request')">Request</div>
+        <div class="detail-tab" onclick="switchDetailTab(this, 'response')">Response</div>
+        <div class="detail-tab" onclick="switchDetailTab(this, 'headers')">Headers</div>
+      </div>
+      <div class="detail-body" id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- Mock editor overlay -->
+  <div class="overlay" id="mockOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="mockEditorTitle">Add mock rule</h3>
+        <button class="btn btn-sm" onclick="closeMockEditor()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label class="form-label">URL pattern (glob or regex)</label>
+          <input class="form-input" type="text" id="fUrlPattern"
+            placeholder="*/api/v1/users* or ^https://api\.example\.com/.*">
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label class="form-label">Method</label>
+            <select class="form-select" id="fMethod">
+              <option value="">Any method</option>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Action</label>
+            <select class="form-select" id="fAction">
+              <option value="mockBeforeRequest">Mock (skip server)</option>
+              <option value="breakpoint">Breakpoint (pause response)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label class="form-label">Status code</label>
+            <input class="form-input" type="number" id="fStatusCode" value="200">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Delay (ms)</label>
+            <input class="form-input" type="number" id="fDelay" value="0" min="0" step="100">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Quick presets</label>
+          <div class="preset-row">
+            <button class="preset-btn" onclick="applyPreset(200, '{}')">200 OK</button>
+            <button class="preset-btn" onclick="applyPreset(201, '{&quot;id&quot;: 1}')">201 Created</button>
+            <button class="preset-btn" onclick="applyPreset(204, '')">204 No Content</button>
+            <button class="preset-btn" onclick="applyPreset(400, '{&quot;error&quot;:&quot;Bad Request&quot;}')">400</button>
+            <button class="preset-btn" onclick="applyPreset(401, '{&quot;error&quot;:&quot;Unauthorized&quot;}')">401</button>
+            <button class="preset-btn" onclick="applyPreset(403, '{&quot;error&quot;:&quot;Forbidden&quot;}')">403</button>
+            <button class="preset-btn" onclick="applyPreset(404, '{&quot;error&quot;:&quot;Not Found&quot;}')">404</button>
+            <button class="preset-btn" onclick="applyPreset(422, '{&quot;errors&quot;:{&quot;email&quot;:[&quot;is required&quot;]}}')">422</button>
+            <button class="preset-btn" onclick="applyPreset(429, '{&quot;error&quot;:&quot;Rate limit exceeded&quot;}')">429</button>
+            <button class="preset-btn" onclick="applyPreset(500, '{&quot;error&quot;:&quot;Internal Server Error&quot;}')">500</button>
+            <button class="preset-btn" onclick="applyPreset(503, '{&quot;error&quot;:&quot;Service Unavailable&quot;}')">503</button>
+            <button class="preset-btn" onclick="applyPresetDelay(2000)">Slow (2s)</button>
+            <button class="preset-btn" onclick="applyPresetDelay(5000)">Very slow (5s)</button>
+            <button class="preset-btn" onclick="applyPresetEmpty()">Empty list []</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Response headers (JSON)</label>
+          <input class="form-input" type="text" id="fHeaders"
+            value='{"content-type":"application/json"}'>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Response body</label>
+          <textarea class="form-textarea" id="fBody"
+            placeholder='{"message": "Hello from mock"}'></textarea>
+        </div>
+        <div class="form-row" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="fIsRegex">
+          <label class="form-label" for="fIsRegex" style="margin:0">Use regex matching</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeMockEditor()">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveMock" onclick="saveMockRule()">Save rule</button>
+      </div>
+    </div>
+  </div>
+
+  <script nonce="{{nonce}}">
+    const vscode = acquireVsCodeApi();
+
+    // ---- State ----
+    let entries = [];
+    let mockRules = [];
+    let selectedId = null;
+    let currentMainTab = 'all';
+    let currentDetailTab = 'overview';
+    let filterText = '';
+    let editingRuleId = null;       // non-null when editing existing rule
+    let modifyRequestId = null;     // non-null when modifying a breakpointed response
+
+    // ---- VSCode messages ----
+    window.addEventListener('message', (event) => {
+      const { type, payload } = event.data;
+      switch (type) {
+        case 'initial_data':
+          entries = payload.entries || [];
+          updateStatus(payload.connectedClients > 0);
+          render();
+          break;
+        case 'request_captured':
+          addEntry({
+            id: payload.id, method: payload.method, url: payload.url,
+            requestHeaders: payload.headers || {},
+            requestBody: payload.body,
+            queryParameters: payload.queryParameters || {},
+            requestTimestamp: payload.timestamp,
+          });
+          break;
+        case 'response_captured': {
+          const e = entries.find(x => x.id === payload.requestId);
+          if (e) {
+            e.statusCode = payload.statusCode;
+            e.responseHeaders = payload.headers;
+            e.responseBody = payload.body;
+            e.durationMs = payload.durationMs;
+            e.mocked = payload.mocked || false;
+            e.breakpoint = payload.breakpoint || false;
+            render();
+            if (selectedId === e.id) renderDetail(e);
+          }
+          break;
+        }
+        case 'error_captured': {
+          const e2 = entries.find(x => x.id === payload.requestId);
+          if (e2) {
+            e2.statusCode = payload.statusCode;
+            e2.durationMs = payload.durationMs;
+            e2.error = { type: payload.type, message: payload.message };
+            render();
+          }
+          break;
+        }
+        case 'app_connected': updateStatus(true); break;
+        case 'app_disconnected': updateStatus(false); break;
+      }
+    });
+
+    function addEntry(entry) {
+      entries.push(entry);
+      if (entries.length > 1000) entries.splice(0, entries.length - 500);
+      render();
+    }
+
+    // ---- Rendering ----
+    function render() {
+      updateCounts();
+      if (currentMainTab === 'rules') {
+        renderRules();
+      } else {
+        renderList();
+      }
+    }
+
+    function getFiltered() {
+      let list = entries;
+      const f = filterText.toLowerCase();
+
+      // Tab filter
+      if (currentMainTab === 'mocked') list = list.filter(e => e.mocked);
+      else if (currentMainTab === 'errors') list = list.filter(e => e.error || (e.statusCode && e.statusCode >= 400));
+
+      // Text filter
+      if (f) {
+        list = list.filter(e =>
+          e.url.toLowerCase().includes(f) ||
+          e.method.toLowerCase().includes(f) ||
+          String(e.statusCode || '').includes(f)
+        );
+      }
+      return list;
+    }
+
+    function renderList() {
+      const container = document.getElementById('requestList');
+      const filtered = getFiltered();
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">◎</div>'
+          + '<p>' + (filterText ? 'No matching requests' : 'No network requests captured yet.') + '</p></div>';
+        return;
+      }
+
+      let html = '<div class="list-header">'
+        + '<span>Method</span><span>Status</span><span>URL</span><span>Time</span><span>Duration</span></div>';
+
+      for (const e of filtered) {
+        const cls = [
+          'req-row',
+          selectedId === e.id ? 'selected' : '',
+          e.error ? 'has-error' : '',
+          e.mocked ? 'is-mocked' : '',
+          e.breakpoint ? 'is-breakpoint' : '',
+        ].filter(Boolean).join(' ');
+
+        const sc = e.statusCode;
+        const scClass = sc ? 's' + String(sc)[0] : (e.error ? 's5' : 'pending');
+        const path = extractPath(e.url);
+        let pills = '';
+        if (e.mocked) pills += '<span class="pill pill-mock">MOCK</span>';
+        if (e.breakpoint) pills += '<span class="pill pill-bp">PAUSED</span>';
+
+        html += '<div class="' + cls + '" onclick="selectEntry(\'' + e.id + '\')">'
+          + '<span class="method ' + e.method + '">' + e.method + '</span>'
+          + '<span class="status-code ' + scClass + '">' + (sc || (e.error ? 'ERR' : '···')) + '</span>'
+          + '<span class="url-cell"><span class="url-path">' + esc(path) + '</span>' + pills + '</span>'
+          + '<span class="time">' + fmtTime(e.requestTimestamp) + '</span>'
+          + '<span class="duration">' + (e.durationMs != null ? e.durationMs + 'ms' : '') + '</span>'
+          + '</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function renderRules() {
+      const container = document.getElementById('requestList');
+      if (mockRules.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">⚡</div>'
+          + '<p>No mock rules defined yet. Click "+ Mock" to create one.</p></div>';
+        return;
+      }
+      let html = '<div class="mock-panel">';
+      for (const rule of mockRules) {
+        html += '<div class="mock-rule-card">'
+          + '<div class="rule-info">'
+          + '<div class="rule-pattern">' + esc(rule.urlPattern) + '</div>'
+          + '<div class="rule-meta">'
+          + '<span>' + (rule.method || 'ANY') + '</span>'
+          + '<span>' + rule.action + '</span>'
+          + (rule.mockResponse ? '<span>→ ' + rule.mockResponse.statusCode + '</span>' : '')
+          + (rule.mockResponse?.delayMs ? '<span>+' + rule.mockResponse.delayMs + 'ms</span>' : '')
+          + '</div></div>'
+          + '<button class="btn btn-sm" onclick="editMockRule(\'' + rule.id + '\')">Edit</button>'
+          + '<button class="btn btn-sm btn-danger" onclick="deleteMockRule(\'' + rule.id + '\')">✕</button>'
+          + '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function updateCounts() {
+      document.getElementById('countAll').textContent = entries.length;
+      document.getElementById('countMocked').textContent = entries.filter(e => e.mocked).length;
+      document.getElementById('countErrors').textContent = entries.filter(e => e.error || (e.statusCode && e.statusCode >= 400)).length;
+      document.getElementById('countRules').textContent = mockRules.length;
+    }
+
+    // ---- Detail panel ----
+    function selectEntry(id) {
+      selectedId = id;
+      const entry = entries.find(e => e.id === id);
+      if (!entry) return;
+      document.getElementById('app').classList.add('detail-open');
+      document.getElementById('detailPanel').classList.add('open');
+      renderDetail(entry);
+      renderList(); // update selected highlight
+    }
+
+    function renderDetail(entry) {
+      document.getElementById('detailTitle').textContent =
+        entry.method + ' ' + extractPath(entry.url);
+
+      // Toggle breakpoint buttons
+      const isBreakpoint = entry.breakpoint;
+      document.getElementById('btnResume').style.display = isBreakpoint ? '' : 'none';
+      document.getElementById('btnModify').style.display = isBreakpoint ? '' : 'none';
+      document.getElementById('btnReplay').style.display = isBreakpoint ? 'none' : '';
+
+      renderDetailTab(entry, currentDetailTab);
+    }
+
+    function renderDetailTab(entry, tab) {
+      const body = document.getElementById('detailBody');
+      let html = '';
+
+      switch (tab) {
+        case 'overview':
+          html += sec('General');
+          html += '<table class="header-table">'
+            + tr('URL', entry.url)
+            + tr('Method', entry.method)
+            + tr('Status', entry.statusCode ?? (entry.error ? 'Error' : 'Pending'))
+            + tr('Duration', entry.durationMs != null ? entry.durationMs + ' ms' : '—')
+            + tr('Time', entry.requestTimestamp || '—')
+            + (entry.mocked ? tr('Type', '<span style="color:var(--mocked)">Mocked</span>') : '')
+            + (entry.breakpoint ? tr('Type', '<span style="color:var(--warn)">Breakpoint (paused)</span>') : '')
+            + '</table>';
+
+          if (entry.error) {
+            html += sec('Error');
+            html += '<div class="json-view" style="border-color:var(--error)">'
+              + syntaxHL(entry.error) + '</div>';
+          }
+
+          if (Object.keys(entry.queryParameters || {}).length > 0) {
+            html += sec('Query parameters');
+            html += '<table class="header-table">';
+            for (const [k, v] of Object.entries(entry.queryParameters)) {
+              html += tr(k, v);
+            }
+            html += '</table>';
+          }
+          break;
+
+        case 'request':
+          html += sec('Request body');
+          if (entry.requestBody != null) {
+            html += '<div class="json-view">' + syntaxHL(entry.requestBody) + '</div>';
+          } else {
+            html += '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
+          }
+          break;
+
+        case 'response':
+          html += sec('Response body');
+          if (entry.responseBody != null) {
+            html += '<div class="json-view">' + syntaxHL(entry.responseBody) + '</div>';
+          } else if (entry.error) {
+            html += '<div class="json-view" style="border-color:var(--error)">'
+              + syntaxHL(entry.error) + '</div>';
+          } else {
+            html += '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
+          }
+          break;
+
+        case 'headers':
+          html += sec('Request headers');
+          html += headersTable(entry.requestHeaders);
+          if (entry.responseHeaders) {
+            html += sec('Response headers');
+            html += headersTable(entry.responseHeaders);
+          }
+          break;
+      }
+      body.innerHTML = html;
+    }
+
+    function switchDetailTab(el, tab) {
+      currentDetailTab = tab;
+      document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      const entry = entries.find(e => e.id === selectedId);
+      if (entry) renderDetailTab(entry, tab);
+    }
+
+    function closeDetail() {
+      selectedId = null;
+      document.getElementById('app').classList.remove('detail-open');
+      document.getElementById('detailPanel').classList.remove('open');
+      renderList();
+    }
+
+    // ---- JSON syntax highlighting ----
+    function syntaxHL(data) {
+      if (data == null) return '<span class="jnull">null</span>';
+      let str;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch { return esc(data); }
+      }
+      try { str = JSON.stringify(data, null, 2); } catch { return esc(String(data)); }
+
+      return str.replace(
+        /("(?:[^"\\]|\\.)*")\s*:/g,
+        (m, key) => '<span class="jk">' + esc(key) + '</span>:'
+      ).replace(
+        /:\s*("(?:[^"\\]|\\.)*")/g,
+        (m, val) => ': <span class="js">' + esc(val) + '</span>'
+      ).replace(
+        /:\s*(-?\d+\.?\d*([eE][+-]?\d+)?)/g,
+        (m, num) => ': <span class="jn">' + num + '</span>'
+      ).replace(
+        /:\s*(true|false)/g,
+        (m, b) => ': <span class="jb">' + b + '</span>'
+      ).replace(
+        /:\s*(null)/g,
+        ': <span class="jnull">null</span>'
+      );
+    }
+
+    // ---- Mock editor ----
+    function openMockEditor(prefill) {
+      editingRuleId = null;
+      modifyRequestId = null;
+      document.getElementById('mockEditorTitle').textContent = 'Add mock rule';
+      document.getElementById('btnSaveMock').textContent = 'Save rule';
+      document.getElementById('fUrlPattern').value = prefill?.url || '';
+      document.getElementById('fMethod').value = prefill?.method || '';
+      document.getElementById('fAction').value = 'mockBeforeRequest';
+      document.getElementById('fStatusCode').value = prefill?.statusCode || 200;
+      document.getElementById('fDelay').value = 0;
+      document.getElementById('fBody').value = prefill?.body || '';
+      document.getElementById('fHeaders').value = '{"content-type":"application/json"}';
+      document.getElementById('fIsRegex').checked = false;
+      document.getElementById('mockOverlay').classList.add('open');
+    }
+
+    function openModifyFromDetail() {
+      const entry = entries.find(e => e.id === selectedId);
+      if (!entry) return;
+      modifyRequestId = entry.id;
+      editingRuleId = null;
+      document.getElementById('mockEditorTitle').textContent = 'Modify response — ' + entry.id;
+      document.getElementById('btnSaveMock').textContent = 'Send modified response';
+      document.getElementById('fUrlPattern').value = entry.url;
+      document.getElementById('fMethod').value = entry.method;
+      document.getElementById('fAction').value = 'mockBeforeRequest';
+      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      document.getElementById('fDelay').value = 0;
+      document.getElementById('fBody').value = tryStringify(entry.responseBody);
+      document.getElementById('fHeaders').value = JSON.stringify(entry.responseHeaders || {"content-type":"application/json"});
+      document.getElementById('fIsRegex').checked = false;
+      document.getElementById('mockOverlay').classList.add('open');
+    }
+
+    function editMockRule(ruleId) {
+      const rule = mockRules.find(r => r.id === ruleId);
+      if (!rule) return;
+      editingRuleId = ruleId;
+      modifyRequestId = null;
+      document.getElementById('mockEditorTitle').textContent = 'Edit mock rule';
+      document.getElementById('btnSaveMock').textContent = 'Update rule';
+      document.getElementById('fUrlPattern').value = rule.urlPattern;
+      document.getElementById('fMethod').value = rule.method || '';
+      document.getElementById('fAction').value = rule.action;
+      document.getElementById('fStatusCode').value = rule.mockResponse?.statusCode || 200;
+      document.getElementById('fDelay').value = rule.mockResponse?.delayMs || 0;
+      document.getElementById('fBody').value = tryStringify(rule.mockResponse?.body);
+      document.getElementById('fHeaders').value = JSON.stringify(rule.mockResponse?.headers || {});
+      document.getElementById('fIsRegex').checked = rule.isRegex;
+      document.getElementById('mockOverlay').classList.add('open');
+    }
+
+    function closeMockEditor() {
+      document.getElementById('mockOverlay').classList.remove('open');
+      editingRuleId = null;
+      modifyRequestId = null;
+    }
+
+    function saveMockRule() {
+      // If modifying a breakpointed response
+      if (modifyRequestId) {
+        vscode.postMessage({
+          command: 'modifyResponse',
+          data: {
+            requestId: modifyRequestId,
+            statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+            headers: tryParse(document.getElementById('fHeaders').value) || {},
+            body: tryParse(document.getElementById('fBody').value),
+          },
+        });
+        const entry = entries.find(e => e.id === modifyRequestId);
+        if (entry) entry.breakpoint = false;
+        closeMockEditor();
+        render();
+        return;
+      }
+
+      const rule = {
+        id: editingRuleId || 'rule_' + Date.now(),
+        urlPattern: document.getElementById('fUrlPattern').value,
+        method: document.getElementById('fMethod').value || null,
+        isRegex: document.getElementById('fIsRegex').checked,
+        enabled: true,
+        action: document.getElementById('fAction').value,
+        mockResponse: {
+          statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+          headers: tryParse(document.getElementById('fHeaders').value) || {"content-type":"application/json"},
+          body: tryParse(document.getElementById('fBody').value),
+          delayMs: parseInt(document.getElementById('fDelay').value) || 0,
+        },
+      };
+
+      // Update local list
+      if (editingRuleId) {
+        const idx = mockRules.findIndex(r => r.id === editingRuleId);
+        if (idx !== -1) mockRules[idx] = rule;
+        vscode.postMessage({ command: 'addMockRule', data: rule }); // update = add with same id
+      } else {
+        mockRules.push(rule);
+        vscode.postMessage({ command: 'addMockRule', data: rule });
+      }
+
+      closeMockEditor();
+      render();
+    }
+
+    function deleteMockRule(ruleId) {
+      mockRules = mockRules.filter(r => r.id !== ruleId);
+      vscode.postMessage({ command: 'removeMockRule', data: { ruleId } });
+      render();
+    }
+
+    function applyPreset(status, body) {
+      document.getElementById('fStatusCode').value = status;
+      document.getElementById('fBody').value = body;
+    }
+    function applyPresetDelay(ms) {
+      document.getElementById('fDelay').value = ms;
+    }
+    function applyPresetEmpty() {
+      document.getElementById('fBody').value = '[]';
+    }
+
+    // ---- Actions ----
+    function resumeBreakpoint() {
+      if (!selectedId) return;
+      vscode.postMessage({ command: 'resumeResponse', data: { requestId: selectedId } });
+      const entry = entries.find(e => e.id === selectedId);
+      if (entry) entry.breakpoint = false;
+      render();
+      renderDetail(entry);
+    }
+
+    function replayRequest() {
+      if (!selectedId) return;
+      const entry = entries.find(e => e.id === selectedId);
+      if (!entry) return;
+      vscode.postMessage({
+        command: 'replayRequest',
+        data: {
+          method: entry.method,
+          url: entry.url,
+          headers: entry.requestHeaders,
+          body: entry.requestBody,
+        },
+      });
+    }
+
+    function clearTraffic() {
+      entries = [];
+      selectedId = null;
+      closeDetail();
+      render();
+      vscode.postMessage({ command: 'clearTraffic' });
+    }
+
+    // ---- Tab switching ----
+    function switchMainTab(el, tab) {
+      currentMainTab = tab;
+      document.querySelectorAll('.tab-bar .tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      render();
+    }
+
+    function applyFilter() {
+      filterText = document.getElementById('filterInput').value;
+      render();
+    }
+
+    function updateStatus(connected) {
+      const dot = document.getElementById('statusDot');
+      const txt = document.getElementById('statusText');
+      dot.classList.toggle('on', connected);
+      txt.textContent = connected ? 'Connected' : 'Waiting...';
+    }
+
+    // ---- Helpers ----
+    function sec(title) {
+      return '<div class="detail-section"><div class="detail-section-title">' + title + '</div></div>';
+    }
+    function tr(k, v) {
+      return '<tr><td>' + esc(k) + '</td><td>' + v + '</td></tr>';
+    }
+    function headersTable(headers) {
+      if (!headers || Object.keys(headers).length === 0) {
+        return '<div style="color:var(--fg-muted);padding:8px">No headers</div>';
+      }
+      let h = '<table class="header-table">';
+      for (const [k, v] of Object.entries(headers)) {
+        h += tr(k, esc(String(v)));
+      }
+      return h + '</table>';
+    }
+    function extractPath(url) {
+      try { const u = new URL(url); return u.pathname + u.search; }
+      catch { return url; }
+    }
+    function fmtTime(ts) {
+      if (!ts) return '';
+      return new Date(ts).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    function esc(s) {
+      if (typeof s !== 'string') s = String(s ?? '');
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function tryParse(s) {
+      if (!s) return null;
+      try { return JSON.parse(s); } catch { return s; }
+    }
+    function tryStringify(v) {
+      if (v == null) return '';
+      if (typeof v === 'string') return v;
+      try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+    }
+
+    // Init
+    vscode.postMessage({ command: 'getEntries' });
+  </script>
+</body>
+</html>
