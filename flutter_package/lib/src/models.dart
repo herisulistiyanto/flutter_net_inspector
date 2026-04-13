@@ -159,10 +159,17 @@ class MockRule {
       return RegExp(urlPattern).hasMatch(url);
     }
     // Glob-style matching: * matches anything
-    final pattern = urlPattern
-        .replaceAll('.', r'\.')
-        .replaceAll('*', '.*');
-    return RegExp('^$pattern\$').hasMatch(url);
+    // 1. Temporarily replace * with a placeholder
+    // 2. Escape ALL regex metacharacters in the rest
+    // 3. Replace placeholder with .*
+    final escaped = urlPattern
+        .replaceAll('*', '\x00')
+        .replaceAllMapped(
+          RegExp(r'[.+?^${}()|[\]\\]'),
+          (m) => '\\${m[0]}',
+        )
+        .replaceAll('\x00', '.*');
+    return RegExp('^$escaped\$').hasMatch(url);
   }
 }
 
