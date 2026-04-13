@@ -382,12 +382,12 @@
       padding: 10px;
       overflow-x: auto;
     }
-    .jk { color: var(--json-key); }      /* key */
-    .js { color: var(--json-string); }   /* string */
-    .jn { color: var(--json-number); }   /* number */
-    .jb { color: var(--json-bool); }     /* boolean */
-    .jnull { color: var(--json-null); }  /* null */
-    .jp { color: var(--fg-muted); }      /* punctuation */
+    .jk { color: var(--json-key); }
+    .js { color: var(--json-string); }
+    .jn { color: var(--json-number); }
+    .jb { color: var(--json-bool); }
+    .jnull { color: var(--json-null); }
+    .jp { color: var(--fg-muted); }
 
     /* Header table */
     .header-table {
@@ -529,12 +529,79 @@
       color: var(--fg-muted);
     }
     .preset-btn:hover { background: var(--list-hover); color: var(--fg); }
+
+    /* Toggle switch */
+    .toggle {
+      position: relative;
+      width: 32px;
+      height: 18px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .toggle input {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      margin: 0;
+      z-index: 1;
+    }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 9px;
+      transition: background 0.2s;
+    }
+    .toggle input:checked + .toggle-track {
+      background: var(--success);
+    }
+    .toggle-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      pointer-events: none;
+    }
+    .toggle input:checked ~ .toggle-thumb {
+      transform: translateX(14px);
+    }
+
+    /* Mock status bar in detail panel */
+    .mock-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: color-mix(in srgb, var(--mocked) 12%, transparent);
+      border-bottom: 1px solid color-mix(in srgb, var(--mocked) 25%, transparent);
+      font-size: 11px;
+    }
+    .mock-status-bar.inactive {
+      background: color-mix(in srgb, var(--border) 20%, transparent);
+      border-bottom-color: var(--border);
+    }
+    .mock-status-label {
+      flex: 1;
+      color: var(--fg-muted);
+    }
+    .mock-status-label strong {
+      color: var(--mocked);
+    }
+    .mock-status-bar.inactive .mock-status-label strong {
+      color: var(--fg-muted);
+    }
   </style>
 </head>
 <body>
   <div class="app" id="app">
     <!-- Toolbar -->
-    <div class="toolbar">
+    <div class="toolbar" id="toolbar">
       <div class="status-indicator">
         <div class="status-dot" id="statusDot"></div>
         <span id="statusText">Waiting...</span>
@@ -543,35 +610,34 @@
       <div class="toolbar-sep"></div>
 
       <div class="search-box">
-        <input type="text" id="filterInput" placeholder="Filter by URL, method, or status code..."
-          oninput="applyFilter()">
+        <input type="text" id="filterInput" placeholder="Filter by URL, method, or status code...">
       </div>
 
       <div class="toolbar-sep"></div>
 
-      <button class="btn btn-sm" onclick="clearTraffic()" title="Clear all entries">
+      <button class="btn btn-sm" data-action="clear" title="Clear all entries">
         Clear
       </button>
-      <button class="btn btn-sm btn-primary" onclick="openMockEditor()" title="Add new mock rule">
+      <button class="btn btn-sm btn-primary" data-action="mock" title="Add new mock rule">
         + Mock
       </button>
     </div>
 
     <!-- Tab bar -->
-    <div class="tab-bar">
-      <div class="tab active" data-tab="all" onclick="switchMainTab(this, 'all')">
+    <div class="tab-bar" id="tabBar">
+      <div class="tab active" data-tab="all">
         All <span class="count" id="countAll">0</span>
       </div>
-      <div class="tab" data-tab="xhr" onclick="switchMainTab(this, 'xhr')">
+      <div class="tab" data-tab="xhr">
         XHR
       </div>
-      <div class="tab" data-tab="mocked" onclick="switchMainTab(this, 'mocked')">
+      <div class="tab" data-tab="mocked">
         Mocked <span class="count" id="countMocked">0</span>
       </div>
-      <div class="tab" data-tab="errors" onclick="switchMainTab(this, 'errors')">
+      <div class="tab" data-tab="errors">
         Errors <span class="count" id="countErrors">0</span>
       </div>
-      <div class="tab" data-tab="rules" onclick="switchMainTab(this, 'rules')">
+      <div class="tab" data-tab="rules">
         Mock Rules <span class="count" id="countRules">0</span>
       </div>
     </div>
@@ -586,28 +652,29 @@
 
     <!-- Detail panel -->
     <div class="detail-panel" id="detailPanel">
-      <div class="detail-header">
+      <div class="detail-header" id="detailHeader">
         <span class="detail-header-title" id="detailTitle">—</span>
         <div style="display:flex;gap:4px;flex-shrink:0;">
-          <button class="btn btn-sm" id="btnReplay" onclick="replayRequest()" style="display:none">
+          <button class="btn btn-sm" id="btnMockThis" data-action="mock-this"
+            style="border-color:var(--mocked);color:var(--mocked)">
+            ✦ Mock this
+          </button>
+          <button class="btn btn-sm" id="btnReplay" data-action="replay">
             ↻ Replay
           </button>
-          <button class="btn btn-sm" id="btnResume" onclick="resumeBreakpoint()"
+          <button class="btn btn-sm" id="btnResume" data-action="resume"
             style="display:none;border-color:var(--warn);color:var(--warn)">
             ▶ Resume
           </button>
-          <button class="btn btn-sm" id="btnModify" onclick="openModifyFromDetail()"
-            style="display:none;border-color:var(--mocked);color:var(--mocked)">
-            ✎ Modify
-          </button>
-          <button class="btn btn-sm" onclick="closeDetail()" style="opacity:0.6">✕</button>
+          <button class="btn btn-sm" data-action="close-detail" style="opacity:0.6">✕</button>
         </div>
       </div>
-      <div class="detail-tabs">
-        <div class="detail-tab active" onclick="switchDetailTab(this, 'overview')">Overview</div>
-        <div class="detail-tab" onclick="switchDetailTab(this, 'request')">Request</div>
-        <div class="detail-tab" onclick="switchDetailTab(this, 'response')">Response</div>
-        <div class="detail-tab" onclick="switchDetailTab(this, 'headers')">Headers</div>
+      <div id="mockStatusBar"></div>
+      <div class="detail-tabs" id="detailTabs">
+        <div class="detail-tab active" data-dtab="overview">Overview</div>
+        <div class="detail-tab" data-dtab="request">Request</div>
+        <div class="detail-tab" data-dtab="response">Response</div>
+        <div class="detail-tab" data-dtab="headers">Headers</div>
       </div>
       <div class="detail-body" id="detailBody"></div>
     </div>
@@ -618,7 +685,7 @@
     <div class="modal">
       <div class="modal-header">
         <h3 id="mockEditorTitle">Add mock rule</h3>
-        <button class="btn btn-sm" onclick="closeMockEditor()">✕</button>
+        <button class="btn btn-sm" data-action="close-modal">✕</button>
       </div>
       <div class="modal-body">
         <div class="form-row">
@@ -659,21 +726,21 @@
 
         <div class="form-row">
           <label class="form-label">Quick presets</label>
-          <div class="preset-row">
-            <button class="preset-btn" onclick="applyPreset(200, '{}')">200 OK</button>
-            <button class="preset-btn" onclick="applyPreset(201, '{&quot;id&quot;: 1}')">201 Created</button>
-            <button class="preset-btn" onclick="applyPreset(204, '')">204 No Content</button>
-            <button class="preset-btn" onclick="applyPreset(400, '{&quot;error&quot;:&quot;Bad Request&quot;}')">400</button>
-            <button class="preset-btn" onclick="applyPreset(401, '{&quot;error&quot;:&quot;Unauthorized&quot;}')">401</button>
-            <button class="preset-btn" onclick="applyPreset(403, '{&quot;error&quot;:&quot;Forbidden&quot;}')">403</button>
-            <button class="preset-btn" onclick="applyPreset(404, '{&quot;error&quot;:&quot;Not Found&quot;}')">404</button>
-            <button class="preset-btn" onclick="applyPreset(422, '{&quot;errors&quot;:{&quot;email&quot;:[&quot;is required&quot;]}}')">422</button>
-            <button class="preset-btn" onclick="applyPreset(429, '{&quot;error&quot;:&quot;Rate limit exceeded&quot;}')">429</button>
-            <button class="preset-btn" onclick="applyPreset(500, '{&quot;error&quot;:&quot;Internal Server Error&quot;}')">500</button>
-            <button class="preset-btn" onclick="applyPreset(503, '{&quot;error&quot;:&quot;Service Unavailable&quot;}')">503</button>
-            <button class="preset-btn" onclick="applyPresetDelay(2000)">Slow (2s)</button>
-            <button class="preset-btn" onclick="applyPresetDelay(5000)">Very slow (5s)</button>
-            <button class="preset-btn" onclick="applyPresetEmpty()">Empty list []</button>
+          <div class="preset-row" id="presetRow">
+            <button class="preset-btn" data-preset='{"status":200,"body":"{}"}'>200 OK</button>
+            <button class="preset-btn" data-preset='{"status":201,"body":"{\"id\": 1}"}'>201 Created</button>
+            <button class="preset-btn" data-preset='{"status":204,"body":""}'>204 No Content</button>
+            <button class="preset-btn" data-preset='{"status":400,"body":"{\"error\":\"Bad Request\"}"}'>400</button>
+            <button class="preset-btn" data-preset='{"status":401,"body":"{\"error\":\"Unauthorized\"}"}'>401</button>
+            <button class="preset-btn" data-preset='{"status":403,"body":"{\"error\":\"Forbidden\"}"}'>403</button>
+            <button class="preset-btn" data-preset='{"status":404,"body":"{\"error\":\"Not Found\"}"}'>404</button>
+            <button class="preset-btn" data-preset='{"status":422,"body":"{\"errors\":{\"email\":[\"is required\"]}}"}'>422</button>
+            <button class="preset-btn" data-preset='{"status":429,"body":"{\"error\":\"Rate limit exceeded\"}"}'>429</button>
+            <button class="preset-btn" data-preset='{"status":500,"body":"{\"error\":\"Internal Server Error\"}"}'>500</button>
+            <button class="preset-btn" data-preset='{"status":503,"body":"{\"error\":\"Service Unavailable\"}"}'>503</button>
+            <button class="preset-btn" data-preset='{"delay":2000}'>Slow (2s)</button>
+            <button class="preset-btn" data-preset='{"delay":5000}'>Very slow (5s)</button>
+            <button class="preset-btn" data-preset='{"empty":true}'>Empty list []</button>
           </div>
         </div>
 
@@ -693,8 +760,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn" onclick="closeMockEditor()">Cancel</button>
-        <button class="btn btn-primary" id="btnSaveMock" onclick="saveMockRule()">Save rule</button>
+        <button class="btn" data-action="cancel-modal">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveMock" data-action="save-mock">Save rule</button>
       </div>
     </div>
   </div>
@@ -709,8 +776,8 @@
     let currentMainTab = 'all';
     let currentDetailTab = 'overview';
     let filterText = '';
-    let editingRuleId = null;       // non-null when editing existing rule
-    let modifyRequestId = null;     // non-null when modifying a breakpointed response
+    let editingRuleId = null;
+    let modifyRequestId = null;
 
     // ---- VSCode messages ----
     window.addEventListener('message', (event) => {
@@ -754,6 +821,10 @@
           }
           break;
         }
+        case 'load_persisted_rules':
+          mockRules = payload.rules || [];
+          render();
+          break;
         case 'app_connected': updateStatus(true); break;
         case 'app_disconnected': updateStatus(false); break;
       }
@@ -778,12 +849,8 @@
     function getFiltered() {
       let list = entries;
       const f = filterText.toLowerCase();
-
-      // Tab filter
       if (currentMainTab === 'mocked') list = list.filter(e => e.mocked);
       else if (currentMainTab === 'errors') list = list.filter(e => e.error || (e.statusCode && e.statusCode >= 400));
-
-      // Text filter
       if (f) {
         list = list.filter(e =>
           e.url.toLowerCase().includes(f) ||
@@ -823,7 +890,7 @@
         if (e.mocked) pills += '<span class="pill pill-mock">MOCK</span>';
         if (e.breakpoint) pills += '<span class="pill pill-bp">PAUSED</span>';
 
-        html += '<div class="' + cls + '" onclick="selectEntry(\'' + e.id + '\')">'
+        html += '<div class="' + cls + '" data-id="' + e.id + '">'
           + '<span class="method ' + e.method + '">' + e.method + '</span>'
           + '<span class="status-code ' + scClass + '">' + (sc || (e.error ? 'ERR' : '···')) + '</span>'
           + '<span class="url-cell"><span class="url-path">' + esc(path) + '</span>' + pills + '</span>'
@@ -838,12 +905,18 @@
       const container = document.getElementById('requestList');
       if (mockRules.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="icon">⚡</div>'
-          + '<p>No mock rules defined yet. Click "+ Mock" to create one.</p></div>';
+          + '<p>No mock rules defined yet.<br>Click a request → "✦ Mock this" to create one.</p></div>';
         return;
       }
       let html = '<div class="mock-panel">';
       for (const rule of mockRules) {
-        html += '<div class="mock-rule-card">'
+        const active = rule.enabled !== false;
+        html += '<div class="mock-rule-card" style="' + (active ? '' : 'opacity:0.5') + '">'
+          + '<label class="toggle">'
+          + '<input type="checkbox" ' + (active ? 'checked' : '') + ' data-toggle-rule="' + rule.id + '">'
+          + '<div class="toggle-track"></div>'
+          + '<div class="toggle-thumb"></div>'
+          + '</label>'
           + '<div class="rule-info">'
           + '<div class="rule-pattern">' + esc(rule.urlPattern) + '</div>'
           + '<div class="rule-meta">'
@@ -852,8 +925,8 @@
           + (rule.mockResponse ? '<span>→ ' + rule.mockResponse.statusCode + '</span>' : '')
           + (rule.mockResponse?.delayMs ? '<span>+' + rule.mockResponse.delayMs + 'ms</span>' : '')
           + '</div></div>'
-          + '<button class="btn btn-sm" onclick="editMockRule(\'' + rule.id + '\')">Edit</button>'
-          + '<button class="btn btn-sm btn-danger" onclick="deleteMockRule(\'' + rule.id + '\')">✕</button>'
+          + '<button class="btn btn-sm" data-edit-rule="' + rule.id + '">Edit</button>'
+          + '<button class="btn btn-sm btn-danger" data-del-rule="' + rule.id + '">✕</button>'
           + '</div>';
       }
       html += '</div>';
@@ -875,20 +948,74 @@
       document.getElementById('app').classList.add('detail-open');
       document.getElementById('detailPanel').classList.add('open');
       renderDetail(entry);
-      renderList(); // update selected highlight
+      renderList();
     }
 
     function renderDetail(entry) {
       document.getElementById('detailTitle').textContent =
         entry.method + ' ' + extractPath(entry.url);
 
-      // Toggle breakpoint buttons
+      // Breakpoint resume
       const isBreakpoint = entry.breakpoint;
       document.getElementById('btnResume').style.display = isBreakpoint ? '' : 'none';
-      document.getElementById('btnModify').style.display = isBreakpoint ? '' : 'none';
-      document.getElementById('btnReplay').style.display = isBreakpoint ? 'none' : '';
+
+      // Always show replay and mock-this for completed requests
+      const hasResponse = entry.statusCode != null || entry.error;
+      document.getElementById('btnReplay').style.display = hasResponse ? '' : 'none';
+      document.getElementById('btnMockThis').style.display = hasResponse ? '' : 'none';
+
+      // Mock status bar — show toggle if a rule exists for this endpoint
+      renderMockStatusBar(entry);
 
       renderDetailTab(entry, currentDetailTab);
+    }
+
+    function renderMockStatusBar(entry) {
+      const bar = document.getElementById('mockStatusBar');
+      const rule = findRuleForEntry(entry);
+
+      if (!rule) {
+        bar.innerHTML = '';
+        return;
+      }
+
+      const active = rule.enabled !== false;
+      bar.innerHTML = '<div class="mock-status-bar ' + (active ? '' : 'inactive') + '">'
+        + '<span class="mock-status-label">'
+        + '<strong>' + (active ? 'Mock active' : 'Mock paused') + '</strong>'
+        + ' — ' + (rule.action === 'breakpoint' ? 'breakpoint' : rule.mockResponse ? rule.mockResponse.statusCode : '200')
+        + (rule.mockResponse && rule.mockResponse.delayMs ? ' +' + rule.mockResponse.delayMs + 'ms' : '')
+        + '</span>'
+        + '<button class="btn btn-sm" data-action="edit-active-rule" data-rule-id="' + rule.id + '">Edit</button>'
+        + '<label class="toggle">'
+        + '<input type="checkbox" ' + (active ? 'checked' : '') + ' data-toggle-rule="' + rule.id + '">'
+        + '<div class="toggle-track"></div>'
+        + '<div class="toggle-thumb"></div>'
+        + '</label>'
+        + '</div>';
+    }
+
+    function findRuleForEntry(entry) {
+      const url = entry.url;
+      const method = entry.method;
+      for (let i = 0; i < mockRules.length; i++) {
+        const r = mockRules[i];
+        if (r.method && r.method.toUpperCase() !== method.toUpperCase()) continue;
+        let pattern;
+        if (r.isRegex) {
+          pattern = r.urlPattern;
+        } else {
+          // Same logic as Dart: placeholder for *, escape all metacharacters, restore .*
+          pattern = r.urlPattern
+            .replace(/\*/g, '\x00')
+            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+            .replace(/\x00/g, '.*');
+        }
+        try {
+          if (new RegExp('^' + pattern + '$').test(url)) return r;
+        } catch(e) {}
+      }
+      return null;
     }
 
     function renderDetailTab(entry, tab) {
@@ -1059,7 +1186,6 @@
     }
 
     function saveMockRule() {
-      // If modifying a breakpointed response
       if (modifyRequestId) {
         vscode.postMessage({
           command: 'modifyResponse',
@@ -1092,11 +1218,10 @@
         },
       };
 
-      // Update local list
       if (editingRuleId) {
         const idx = mockRules.findIndex(r => r.id === editingRuleId);
         if (idx !== -1) mockRules[idx] = rule;
-        vscode.postMessage({ command: 'addMockRule', data: rule }); // update = add with same id
+        vscode.postMessage({ command: 'addMockRule', data: rule });
       } else {
         mockRules.push(rule);
         vscode.postMessage({ command: 'addMockRule', data: rule });
@@ -1154,6 +1279,72 @@
       closeDetail();
       render();
       vscode.postMessage({ command: 'clearTraffic' });
+    }
+
+    function mockThisEndpoint() {
+      const entry = entries.find(e => e.id === selectedId);
+      if (!entry) return;
+
+      // Check if a rule already exists — if so, open it for editing
+      const existing = findRuleForEntry(entry);
+      if (existing) {
+        editMockRule(existing.id);
+        return;
+      }
+
+      // Convert full URL to a glob pattern: strip query params, wrap with *
+      // https://api.example.com/v1/users?page=1 → */v1/users*
+      const globPattern = urlToGlob(entry.url);
+
+      // Pre-fill the mock editor with this request's data
+      editingRuleId = null;
+      modifyRequestId = null;
+      document.getElementById('mockEditorTitle').textContent = 'Mock: ' + entry.method + ' ' + extractPath(entry.url);
+      document.getElementById('btnSaveMock').textContent = 'Save & enable mock';
+      document.getElementById('fUrlPattern').value = globPattern;
+      document.getElementById('fMethod').value = entry.method;
+      document.getElementById('fAction').value = 'mockBeforeRequest';
+      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      document.getElementById('fDelay').value = 0;
+      document.getElementById('fBody').value = tryStringify(entry.responseBody);
+      document.getElementById('fHeaders').value = JSON.stringify(
+        entry.responseHeaders || {"content-type":"application/json"}
+      );
+      document.getElementById('fIsRegex').checked = false;
+      document.getElementById('mockOverlay').classList.add('open');
+    }
+
+    function urlToGlob(url) {
+      try {
+        const u = new URL(url);
+        // Use pathname only, wrap with * to match any base URL and query params
+        return '*' + u.pathname + '*';
+      } catch {
+        return '*' + url + '*';
+      }
+    }
+
+    function toggleMockRule(ruleId, enabled) {
+      const rule = mockRules.find(r => r.id === ruleId);
+      if (!rule) return;
+
+      rule.enabled = enabled;
+
+      if (enabled) {
+        // Re-add the rule to Flutter
+        vscode.postMessage({ command: 'addMockRule', data: rule });
+      } else {
+        // Remove from Flutter so it stops matching
+        vscode.postMessage({ command: 'removeMockRule', data: { ruleId: ruleId } });
+      }
+
+      render();
+
+      // Re-render mock status bar if detail panel is open
+      if (selectedId) {
+        const entry = entries.find(e => e.id === selectedId);
+        if (entry) renderMockStatusBar(entry);
+      }
     }
 
     // ---- Tab switching ----
@@ -1214,6 +1405,100 @@
       if (typeof v === 'string') return v;
       try { return JSON.stringify(v, null, 2); } catch { return String(v); }
     }
+
+    // ========================================================================
+    // EVENT DELEGATION — replaces all inline onclick/oninput handlers
+    // ========================================================================
+
+    // Toolbar buttons
+    document.getElementById('toolbar').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var action = btn.dataset.action;
+      if (action === 'clear') clearTraffic();
+      if (action === 'mock') openMockEditor();
+    });
+
+    // Filter input
+    document.getElementById('filterInput').addEventListener('input', applyFilter);
+
+    // Main tab bar
+    document.getElementById('tabBar').addEventListener('click', function(e) {
+      var tab = e.target.closest('[data-tab]');
+      if (tab) switchMainTab(tab, tab.dataset.tab);
+    });
+
+    // Request list (dynamic rows + mock rule buttons + toggles)
+    document.getElementById('requestList').addEventListener('click', function(e) {
+      // Toggle switches (must check before data-id since toggle is inside card)
+      var toggle = e.target.closest('[data-toggle-rule]');
+      if (toggle) {
+        e.stopPropagation();
+        return toggleMockRule(toggle.dataset.toggleRule, toggle.checked);
+      }
+
+      var row = e.target.closest('[data-id]');
+      if (row) return selectEntry(row.dataset.id);
+
+      var editBtn = e.target.closest('[data-edit-rule]');
+      if (editBtn) return editMockRule(editBtn.dataset.editRule);
+
+      var delBtn = e.target.closest('[data-del-rule]');
+      if (delBtn) return deleteMockRule(delBtn.dataset.delRule);
+    });
+
+    // Detail header buttons
+    document.getElementById('detailHeader').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var action = btn.dataset.action;
+      if (action === 'replay') replayRequest();
+      if (action === 'resume') resumeBreakpoint();
+      if (action === 'mock-this') mockThisEndpoint();
+      if (action === 'close-detail') closeDetail();
+    });
+
+    // Mock status bar (toggle + edit inside detail panel)
+    document.getElementById('mockStatusBar').addEventListener('click', function(e) {
+      var toggle = e.target.closest('[data-toggle-rule]');
+      if (toggle) {
+        return toggleMockRule(toggle.dataset.toggleRule, toggle.checked);
+      }
+      var editBtn = e.target.closest('[data-action="edit-active-rule"]');
+      if (editBtn) {
+        return editMockRule(editBtn.dataset.ruleId);
+      }
+    });
+
+    // Detail tabs
+    document.getElementById('detailTabs').addEventListener('click', function(e) {
+      var tab = e.target.closest('[data-dtab]');
+      if (tab) switchDetailTab(tab, tab.dataset.dtab);
+    });
+
+    // Mock overlay (backdrop click, all buttons, presets)
+    document.getElementById('mockOverlay').addEventListener('click', function(e) {
+      // Click on backdrop (the overlay itself) closes
+      if (e.target === e.currentTarget) return closeMockEditor();
+
+      // Preset buttons
+      var preset = e.target.closest('[data-preset]');
+      if (preset) {
+        var p = JSON.parse(preset.dataset.preset);
+        if (p.status !== undefined) applyPreset(p.status, p.body || '');
+        if (p.delay !== undefined) applyPresetDelay(p.delay);
+        if (p.empty) applyPresetEmpty();
+        return;
+      }
+
+      // Action buttons
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var action = btn.dataset.action;
+      if (action === 'save-mock') saveMockRule();
+      if (action === 'cancel-modal') closeMockEditor();
+      if (action === 'close-modal') closeMockEditor();
+    });
 
     // Init
     vscode.postMessage({ command: 'getEntries' });
