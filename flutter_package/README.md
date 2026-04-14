@@ -2,136 +2,61 @@
 
 A Dio interceptor that captures all HTTP traffic and enables real-time mocking, breakpoints, and response modification via a connected VSCode extension dashboard.
 
-Think of it as **Flipper/Stetho for Flutter** — but instead of a standalone desktop app, the dashboard lives inside VSCode.
+Think of it as **Flipper/Stetho for Flutter** — but the dashboard lives inside VSCode.
 
-## Architecture
+---
 
-```
-Dio request pipeline:
+## Installation
 
-  App code → Dio.get("/users")
-               │
-               ▼
-  ┌─────────────────────────────────┐
-  │   NetInspectorInterceptor       │
-  │                                 │
-  │   onRequest()                   │
-  │     ├─ Tag request with ID      │
-  │     ├─ Send metadata to VSCode  │  ◄── WebSocket (InspectorClient)
-  │     ├─ Check MockRuleStore      │
-  │     │   ├─ Match found (mock)   │──► Return fake Response immediately
-  │     │   └─ No match             │──► handler.next() (proceed to server)
-  │     │                           │
-  │   onResponse()                  │
-  │     ├─ Send response to VSCode  │
-  │     ├─ Check breakpoint rule    │
-  │     │   ├─ Breakpoint active    │──► Pause via Completer, wait for VSCode
-  │     │   └─ No breakpoint        │──► handler.next() (pass through)
-  │     │                           │
-  │   onError()                     │
-  │     └─ Send error to VSCode     │
-  └─────────────────────────────────┘
-               │
-               ▼
-         App receives Response
+```yaml
+# pubspec.yaml
+dependencies:
+  flutter_net_inspector:
+    path: ../flutter_net_inspector/flutter_package
+    # or your private registry / git reference
 ```
 
-## Interception Modes
+---
 
-### Passthrough (default)
-All requests flow normally. The interceptor captures request/response metadata and forwards it to VSCode via WebSocket for display. Zero impact on app behavior.
+## Setup
 
-### Mock Before Request
-When a `MockRule` with `action: mockBeforeRequest` matches the request URL + method, the interceptor short-circuits — it never hits the real server. Returns the configured mock response immediately.
+### Step 1 — Configure host (once, before DI)
 
-### Breakpoint (Pause & Edit)
-When a `MockRule` with `action: breakpoint` matches, the real request goes through to the server. When the response comes back, it's **paused** via a `Completer<MockResponseData?>`. The response data is sent to VSCode, which can either resume (pass original) or send back a modified response.
+`NetInspectorConfig` holds the WebSocket host and port. It picks a sensible default based on the current platform, and can be overridden per developer without touching shared code.
 
-Timeout is configurable (default 30s) — if VSCode doesn't respond, the original response resumes automatically.
+```dart
+import 'package:flutter_net_inspector/flutter_net_inspector.dart';
 
-## File Structure
+void main() {
+  // Default resolution order:
+  //   1. --dart-define=INSPECTOR_HOST=<value>  (recommended for teams)
+  //   2. 10.0.2.2  on Android  (emulator → host machine alias)
+  //   3. 127.0.0.1 everywhere else (iOS Simulator, macOS)
+  //
+  // Real devices need an explicit host — either:
+  //   a) flutter run --dart-define=INSPECTOR_HOST=192.168.1.42
+  //   b) NetInspectorConfig.host = '192.168.1.42';  ← set it here
 
-```
-lib/
-├── flutter_net_inspector.dart    # Barrel export
-└── src/
-    ├── models.dart               # Protocol models (MessageType, MockRule, CapturedRequest/Response)
-    ├── inspector_client.dart      # WebSocket client (connects to VSCode extension server)
-    ├── interceptor.dart           # NetInspectorInterceptor (the Dio interceptor)
-    └── mock_store.dart            # In-memory store for active mock rules
-```
-
-### Key Classes
-
-- **`NetInspectorInterceptor`** — The Dio interceptor. Extends `Interceptor`. Handles `onRequest`, `onResponse`, `onError`. Contains the breakpoint `Completer` map and mock rule matching logic. Entry point for the whole system.
-
-- **`InspectorClient`** — WebSocket client that connects to the VSCode extension's server (default `ws://127.0.0.1:9555/inspector`). Handles auto-reconnection (up to 50 attempts, 3s interval). Sends captured traffic data and receives mock rule commands.
-
-- **`MockRuleStore`** — Stores `MockRule` objects received from VSCode. Provides `findMatch(url, method)` which returns the first matching rule using glob or regex pattern matching.
-
-- **`MockRule`** — Defines a mock rule: URL pattern (glob or regex), HTTP method filter, action type (`mockBeforeRequest` or `breakpoint`), and optional `MockResponseData` (status code, headers, body, simulated delay).
-
-- **`InspectorMessage`** — Envelope for all WebSocket messages. Contains `type` (enum), `id`, `payload` (Map), and `timestamp`.
-
-## WebSocket Protocol
-
-All messages are JSON over WebSocket:
-
-```json
-{
-  "type": "request_captured",
-  "id": "req_42",
-  "payload": { ... },
-  "timestamp": "2026-04-12T10:00:00.000Z"
+  configureDependencies();
+  runApp(MyApp());
 }
 ```
 
-### Outgoing (Flutter → VSCode)
+| Device | Default host | Override needed? |
+|---|---|---|
+| iOS Simulator | `127.0.0.1` | No |
+| Android Emulator | `10.0.2.2` | No |
+| Android Real Device | — | Yes — LAN IP or `adb reverse tcp:9555 tcp:9555` |
+| iOS Real Device | — | Yes — LAN IP |
 
-| Type                 | Payload fields                                          |
-| -------------------- | ------------------------------------------------------- |
-| `request_captured`   | id, method, url, headers, body, queryParameters         |
-| `response_captured`  | requestId, statusCode, headers, body, durationMs        |
-| `error_captured`     | requestId, type, message, statusCode, durationMs        |
-| `app_connected`      | appId, platform, dartVersion                            |
-| `app_disconnected`   | (empty)                                                 |
-
-### Incoming (VSCode → Flutter)
-
-| Type                | Payload fields                                           |
-| ------------------- | -------------------------------------------------------- |
-| `mock_rule_add`     | id, urlPattern, method, isRegex, action, mockResponse    |
-| `mock_rule_remove`  | ruleId                                                   |
-| `mock_rule_update`  | (same as add, overwrites by id)                          |
-| `mock_rule_clear`   | (empty)                                                  |
-| `modify_response`   | requestId, statusCode, headers, body                     |
-| `resume_response`   | requestId                                                |
-| `replay_request`    | method, url, headers, body                               |
-
-## Usage
-
-### Basic Setup
+### Step 2 — Wire up the interceptor
 
 ```dart
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_net_inspector/flutter_net_inspector.dart';
 
-final inspector = NetInspectorInterceptor(
-  host: '127.0.0.1',  // use 10.0.2.2 for Android emulator
-  port: 9555,
-  breakpointTimeout: const Duration(seconds: 30),
-);
-
-await inspector.connect();
-
-final dio = Dio(BaseOptions(baseUrl: 'https://api.example.com'));
-dio.interceptors.insert(0, inspector); // add FIRST
-inspector.attachDio(dio);             // enables request replay
-```
-
-### Integration with get_it / injectable
-
-```dart
+// DI module — host/port come from NetInspectorConfig automatically
 @module
 abstract class NetworkModule {
   @singleton
@@ -141,41 +66,197 @@ abstract class NetworkModule {
   Dio dio(NetInspectorInterceptor inspector) {
     final dio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl));
     if (kDebugMode) {
-      dio.interceptors.insert(0, inspector);
-      inspector.attachDio(dio);
+      dio.interceptors.insert(0, inspector); // must be first
+      inspector.attachDio(dio);             // enables request replay
     }
     return dio;
   }
 }
+```
 
-// In main.dart or AppBloc:
-Future<void> initApp() async {
-  configureDependencies();
-  if (kDebugMode) {
-    await getIt<NetInspectorInterceptor>().connect();
-  }
+### Step 3 — Connect
+
+```dart
+// In main() or AppBloc.init(), after DI is ready
+if (kDebugMode) {
+  await getIt<NetInspectorInterceptor>().connect();
 }
 ```
 
-### Conditional Debug-Only Usage
+The client connects asynchronously and auto-reconnects silently. If the VSCode extension is not running, requests pass through normally with no visible error.
 
-Wrap everything in `kDebugMode` so the interceptor is completely absent in release builds. The WebSocket client auto-reconnects silently, so if the VSCode extension isn't running, there's no crash or visible error — just no dashboard.
+---
 
-## Network Configuration Notes
+## Team Setup (different devices)
 
-| Target device      | Host value     | Notes                                    |
-| ------------------- | -------------- | ---------------------------------------- |
-| iOS Simulator       | `127.0.0.1`   | Shares host network                      |
-| Android Emulator    | `10.0.2.2`    | Special alias for host loopback          |
-| Physical device     | `127.0.0.1`   | Requires `adb reverse tcp:9555 tcp:9555` |
-| Remote (Tailscale)  | Tailscale IP   | Works across network                     |
+The most practical approach for a team is `--dart-define`. Each developer adds this to their IDE launch configuration so no shared code ever changes:
+
+**VS Code `launch.json`:**
+```json
+{
+  "configurations": [
+    {
+      "name": "Flutter (debug)",
+      "request": "launch",
+      "type": "dart",
+      "args": ["--dart-define=INSPECTOR_HOST=192.168.1.42"]
+    }
+  ]
+}
+```
+
+**Android Studio Run Configuration:**  
+Edit Configurations → Additional run args → `--dart-define=INSPECTOR_HOST=192.168.1.42`
+
+**Terminal:**
+```bash
+flutter run --dart-define=INSPECTOR_HOST=192.168.1.42
+```
+
+---
+
+## Interception Modes
+
+### Passthrough (default)
+All requests flow to the real server. The interceptor captures metadata and forwards it to VSCode via WebSocket. Zero impact on app behavior.
+
+### Mock Before Request
+When a `MockRule` with `action: mockBeforeRequest` matches the request's URL + method, the interceptor short-circuits the request — no server contact. It returns the configured mock response directly.
+
+For **error status codes (4xx/5xx)**, the interceptor respects the Dio instance's `validateStatus` setting. By default Dio accepts only 2xx, so mocking a 500 will properly raise a `DioException` with `type: badResponse` and your `catch` blocks will fire as expected.
+
+### Breakpoint (Pause & Edit)
+When a `MockRule` with `action: breakpoint` matches, the real request goes to the server. When the response arrives, it's **paused** in a `Completer<MockResponseData?>`. The response data is sent to VSCode for editing.
+
+VSCode sends back either:
+- `resume_response` → original response passes through
+- `modify_response` → modified response (new status, headers, body) is returned to Dio
+
+A configurable timeout (default 30 s) auto-resumes with the original response if VSCode doesn't respond.
+
+---
+
+## Key Classes
+
+### `NetInspectorConfig`
+Static configuration class. Set `host` and `port` before constructing the interceptor. Supports `--dart-define` overrides and platform-aware defaults.
+
+```dart
+NetInspectorConfig.host  // default: 10.0.2.2 (Android) / 127.0.0.1 (others)
+NetInspectorConfig.port  // default: 9555
+```
+
+### `NetInspectorInterceptor`
+The Dio interceptor. Extends `Interceptor`. Handles `onRequest`, `onResponse`, `onError`. Manages the breakpoint `Completer` map and mock rule matching.
+
+Constructor parameters are all optional — `host` and `port` default to `NetInspectorConfig` values:
+
+```dart
+NetInspectorInterceptor({
+  String? host,           // defaults to NetInspectorConfig.host
+  int? port,              // defaults to NetInspectorConfig.port
+  Duration breakpointTimeout = const Duration(seconds: 30),
+  InspectorClient? client, // injectable for testing
+})
+```
+
+### `InspectorClient`
+WebSocket client. Connects to `ws://<host>:<port>/inspector`. Auto-reconnects up to 50 times at 3 s intervals. Sends captured traffic; receives mock rule commands.
+
+### `MockRuleStore`
+In-memory store for active `MockRule` objects pushed from VSCode. `findMatch(url, method)` returns the first rule where `rule.urlPattern == url` and the method matches.
+
+### `MockRule`
+Defines a single mock rule:
+
+```dart
+MockRule({
+  required String id,
+  required String urlPattern,  // exact URL match (including query string)
+  String? method,              // null = match any method
+  bool enabled = true,
+  MockRuleAction action = MockRuleAction.mockBeforeRequest,
+  MockResponseData? mockResponse,
+})
+```
+
+### `MockResponseData`
+The mock response payload:
+
+```dart
+MockResponseData({
+  required int statusCode,
+  Map<String, dynamic> headers = const {},
+  dynamic body,
+  int? delayMs,  // simulated latency
+})
+```
+
+### `InspectorMessage`
+WebSocket message envelope: `type` (enum), `id` (string), `payload` (Map), `timestamp`.
+
+---
+
+## WebSocket Protocol
+
+All messages are JSON:
+
+```json
+{
+  "type": "request_captured",
+  "id": "req_42",
+  "payload": { ... },
+  "timestamp": "2026-04-14T10:00:00.000Z"
+}
+```
+
+### Flutter → VSCode
+
+| Type | Payload fields |
+|---|---|
+| `request_captured` | id, method, url, headers, body, queryParameters |
+| `response_captured` | requestId, statusCode, headers, body, durationMs, mocked |
+| `error_captured` | requestId, type, message, statusCode, durationMs |
+| `app_connected` | appId, platform, dartVersion |
+| `app_disconnected` | (empty) |
+
+### VSCode → Flutter
+
+| Type | Payload fields |
+|---|---|
+| `mock_rule_add` | id, urlPattern, method, enabled, action, mockResponse |
+| `mock_rule_remove` | ruleId |
+| `mock_rule_update` | same as add, overwrites by id |
+| `mock_rule_clear` | (empty) |
+| `modify_response` | requestId, statusCode, headers, body |
+| `resume_response` | requestId |
+| `replay_request` | method, url, headers, body |
+
+---
+
+## File Structure
+
+```
+lib/
+├── flutter_net_inspector.dart   # Barrel export
+└── src/
+    ├── config.dart              # NetInspectorConfig (host/port, platform defaults)
+    ├── models.dart              # Protocol models (InspectorMessage, MockRule, etc.)
+    ├── inspector_client.dart    # WebSocket client
+    ├── interceptor.dart         # NetInspectorInterceptor (Dio interceptor)
+    └── mock_store.dart          # In-memory active mock rule store
+```
+
+---
 
 ## Dependencies
 
-- `dio: ^5.9.1` — the only runtime dependency
+- `dio: ^5.9.1` — only runtime dependency
+
+---
 
 ## Companion Project
 
-This package is designed to work with the **Flutter Net Inspector VSCode Extension** (`../vscode_extension/`). The extension runs a WebSocket server on port 9555 and provides the dashboard UI for viewing traffic and managing mock rules.
+Designed to work with the **Flutter Net Inspector VSCode Extension** (`../vscode_extension/`). The extension runs the WebSocket server and provides the dashboard UI.
 
-The package works standalone too — if no VSCode extension is connected, requests pass through normally with zero overhead beyond the WebSocket reconnect attempts.
+The package works standalone — if no extension is connected, all requests pass through normally with no crash or visible error.

@@ -196,7 +196,7 @@
 
     .list-header {
       display: grid;
-      grid-template-columns: 50px 56px 1fr 64px 56px;
+      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px;
       padding: 4px 10px;
       font-size: 10px;
       text-transform: uppercase;
@@ -208,10 +208,45 @@
       top: 0;
       z-index: 2;
     }
+    .url-header-cell {
+      position: relative;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+    .col-resize-handle {
+      position: absolute;
+      right: -4px;
+      top: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 3;
+    }
+    .col-resize-handle::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 20%;
+      width: 2px;
+      height: 60%;
+      background: var(--border);
+      border-radius: 1px;
+      transform: translateX(-50%);
+    }
+    .col-resize-handle:hover::after { background: var(--accent); }
+
+    .time-header {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .time-header:hover { color: var(--fg); }
+    .sort-arrow { opacity: 0.7; font-size: 9px; }
 
     .req-row {
       display: grid;
-      grid-template-columns: 50px 56px 1fr 64px 56px;
+      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px;
       padding: 5px 10px;
       border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
       cursor: pointer;
@@ -456,9 +491,15 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       width: 560px;
-      max-height: 80vh;
-      overflow-y: auto;
+      min-width: 400px;
+      min-height: 300px;
+      max-width: 95vw;
+      max-height: 95vh;
       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      resize: both;
+      overflow: hidden; /* required for resize */
     }
     .modal-header {
       display: flex;
@@ -466,15 +507,21 @@
       justify-content: space-between;
       padding: 12px 16px;
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
     .modal-header h3 { font-size: 14px; font-weight: 500; }
-    .modal-body { padding: 16px; }
+    .modal-body { 
+      padding: 16px; 
+      flex: 1;
+      overflow-y: auto;
+    }
     .modal-footer {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
       padding: 12px 16px;
       border-top: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
     .form-row {
@@ -511,24 +558,6 @@
       resize: vertical;
       line-height: 1.5;
     }
-
-    /* Quick mock presets */
-    .preset-row {
-      display: flex;
-      gap: 4px;
-      flex-wrap: wrap;
-      margin-bottom: 10px;
-    }
-    .preset-btn {
-      padding: 2px 8px;
-      font-size: 10px;
-      border-radius: 3px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--fg-muted);
-    }
-    .preset-btn:hover { background: var(--list-hover); color: var(--fg); }
 
     /* Toggle switch */
     .toggle {
@@ -596,6 +625,46 @@
     .mock-status-bar.inactive .mock-status-label strong {
       color: var(--fg-muted);
     }
+
+    /* JSON Editor syntax highlight overlay */
+    .json-editor-wrapper {
+      position: relative;
+    }
+    .json-editor-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+      padding: 5px 8px; /* sync with .form-textarea */
+      margin: 0;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      tab-size: 2;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      color: var(--fg);
+      overflow-y: auto;
+      overflow-x: hidden;
+      pointer-events: none;
+    }
+    .json-editor-backdrop::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+    .json-editor-textarea {
+      position: relative;
+      z-index: 2;
+      background: transparent !important;
+      color: transparent !important;
+      caret-color: var(--input-fg);
+    }
   </style>
 </head>
 <body>
@@ -615,9 +684,6 @@
 
       <div class="toolbar-sep"></div>
 
-      <button class="btn btn-sm" data-action="clear" title="Clear all entries">
-        Clear
-      </button>
       <button class="btn btn-sm btn-primary" data-action="mock" title="Add new mock rule">
         + Mock
       </button>
@@ -640,6 +706,10 @@
       <div class="tab" data-tab="rules">
         Mock Rules <span class="count" id="countRules">0</span>
       </div>
+      <button class="btn btn-sm btn-danger" data-action="clear" title="Clear all captured traffic"
+        style="margin-left:auto;align-self:center;margin-right:8px">
+        ⊘ Clear traffic
+      </button>
     </div>
 
     <!-- Request list -->
@@ -689,9 +759,9 @@
       </div>
       <div class="modal-body">
         <div class="form-row">
-          <label class="form-label">URL pattern (glob or regex)</label>
+          <label class="form-label">URL (exact match)</label>
           <input class="form-input" type="text" id="fUrlPattern"
-            placeholder="*/api/v1/users* or ^https://api\.example\.com/.*">
+            placeholder="https://api.example.com/v1/users?page=1">
         </div>
         <div class="form-grid">
           <div class="form-row">
@@ -716,31 +786,44 @@
         <div class="form-grid">
           <div class="form-row">
             <label class="form-label">Status code</label>
-            <input class="form-input" type="number" id="fStatusCode" value="200">
+            <select class="form-select" id="fStatusCode">
+              <optgroup label="1xx Informational">
+                <option value="100">100 Continue</option>
+                <option value="101">101 Switching Protocols</option>
+              </optgroup>
+              <optgroup label="2xx Success">
+                <option value="200" selected>200 OK</option>
+                <option value="201">201 Created</option>
+                <option value="202">202 Accepted</option>
+                <option value="204">204 No Content</option>
+              </optgroup>
+              <optgroup label="3xx Redirection">
+                <option value="301">301 Moved Permanently</option>
+                <option value="302">302 Found</option>
+                <option value="304">304 Not Modified</option>
+              </optgroup>
+              <optgroup label="4xx Client Error">
+                <option value="400">400 Bad Request</option>
+                <option value="401">401 Unauthorized</option>
+                <option value="403">403 Forbidden</option>
+                <option value="404">404 Not Found</option>
+                <option value="405">405 Method Not Allowed</option>
+                <option value="409">409 Conflict</option>
+                <option value="410">410 Gone</option>
+                <option value="422">422 Unprocessable Entity</option>
+                <option value="429">429 Too Many Requests</option>
+              </optgroup>
+              <optgroup label="5xx Server Error">
+                <option value="500">500 Internal Server Error</option>
+                <option value="502">502 Bad Gateway</option>
+                <option value="503">503 Service Unavailable</option>
+                <option value="504">504 Gateway Timeout</option>
+              </optgroup>
+            </select>
           </div>
           <div class="form-row">
             <label class="form-label">Delay (ms)</label>
             <input class="form-input" type="number" id="fDelay" value="0" min="0" step="100">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">Quick presets</label>
-          <div class="preset-row" id="presetRow">
-            <button class="preset-btn" data-preset='{"status":200,"body":"{}"}'>200 OK</button>
-            <button class="preset-btn" data-preset='{"status":201,"body":"{\"id\": 1}"}'>201 Created</button>
-            <button class="preset-btn" data-preset='{"status":204,"body":""}'>204 No Content</button>
-            <button class="preset-btn" data-preset='{"status":400,"body":"{\"error\":\"Bad Request\"}"}'>400</button>
-            <button class="preset-btn" data-preset='{"status":401,"body":"{\"error\":\"Unauthorized\"}"}'>401</button>
-            <button class="preset-btn" data-preset='{"status":403,"body":"{\"error\":\"Forbidden\"}"}'>403</button>
-            <button class="preset-btn" data-preset='{"status":404,"body":"{\"error\":\"Not Found\"}"}'>404</button>
-            <button class="preset-btn" data-preset='{"status":422,"body":"{\"errors\":{\"email\":[\"is required\"]}}"}'>422</button>
-            <button class="preset-btn" data-preset='{"status":429,"body":"{\"error\":\"Rate limit exceeded\"}"}'>429</button>
-            <button class="preset-btn" data-preset='{"status":500,"body":"{\"error\":\"Internal Server Error\"}"}'>500</button>
-            <button class="preset-btn" data-preset='{"status":503,"body":"{\"error\":\"Service Unavailable\"}"}'>503</button>
-            <button class="preset-btn" data-preset='{"delay":2000}'>Slow (2s)</button>
-            <button class="preset-btn" data-preset='{"delay":5000}'>Very slow (5s)</button>
-            <button class="preset-btn" data-preset='{"empty":true}'>Empty list []</button>
           </div>
         </div>
 
@@ -750,13 +833,15 @@
             value='{"content-type":"application/json"}'>
         </div>
         <div class="form-row">
-          <label class="form-label">Response body</label>
-          <textarea class="form-textarea" id="fBody"
-            placeholder='{"message": "Hello from mock"}'></textarea>
-        </div>
-        <div class="form-row" style="display:flex;align-items:center;gap:6px">
-          <input type="checkbox" id="fIsRegex">
-          <label class="form-label" for="fIsRegex" style="margin:0">Use regex matching</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+            <label class="form-label" style="margin:0">Response body</label>
+            <button class="btn btn-sm" type="button" id="btnFormatBody" title="Pretty-print JSON">{ } Format</button>
+          </div>
+          <div class="json-editor-wrapper">
+            <div id="fBodyHighlight" class="json-editor-backdrop"></div>
+            <textarea class="form-textarea json-editor-textarea" id="fBody"
+              placeholder='{"message": "Hello from mock"}' spellcheck="false"></textarea>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -778,6 +863,10 @@
     let filterText = '';
     let editingRuleId = null;
     let modifyRequestId = null;
+    let sortOrder = 'desc'; // 'desc' = newest first, 'asc' = oldest first
+    let isResizing = false;
+    let resizeStartX = 0;
+    let resizeStartWidth = 0;
 
     // ---- VSCode messages ----
     window.addEventListener('message', (event) => {
@@ -863,7 +952,11 @@
 
     function renderList() {
       const container = document.getElementById('requestList');
-      const filtered = getFiltered();
+      const filtered = getFiltered().slice().sort((a, b) => {
+        const ta = a.requestTimestamp ? new Date(a.requestTimestamp).getTime() : 0;
+        const tb = b.requestTimestamp ? new Date(b.requestTimestamp).getTime() : 0;
+        return sortOrder === 'desc' ? tb - ta : ta - tb;
+      });
 
       if (filtered.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="icon">◎</div>'
@@ -871,8 +964,12 @@
         return;
       }
 
+      const arrow = '<span class="sort-arrow">' + (sortOrder === 'desc' ? ' ▼' : ' ▲') + '</span>';
       let html = '<div class="list-header">'
-        + '<span>Method</span><span>Status</span><span>URL</span><span>Time</span><span>Duration</span></div>';
+        + '<span>Method</span><span>Status</span>'
+        + '<span class="url-header-cell"><span>URL</span><div class="col-resize-handle" id="colResizeHandle"></div></span>'
+        + '<span class="time-header" id="timeHeader">Time' + arrow + '</span>'
+        + '<span>Duration</span></div>';
 
       for (const e of filtered) {
         const cls = [
@@ -899,6 +996,43 @@
           + '</div>';
       }
       container.innerHTML = html;
+
+      const timeHeader = document.getElementById('timeHeader');
+      if (timeHeader) {
+        timeHeader.addEventListener('click', () => {
+          sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+          renderList();
+        });
+      }
+
+      const resizeHandle = document.getElementById('colResizeHandle');
+      if (resizeHandle) {
+        resizeHandle.addEventListener('mousedown', startColResize);
+      }
+    }
+
+    function startColResize(e) {
+      e.preventDefault();
+      isResizing = true;
+      resizeStartX = e.clientX;
+      const container = document.getElementById('requestList');
+      const urlCell = container.querySelector('.url-header-cell');
+      resizeStartWidth = urlCell ? urlCell.getBoundingClientRect().width : 200;
+      document.addEventListener('mousemove', onColResize);
+      document.addEventListener('mouseup', stopColResize);
+    }
+
+    function onColResize(e) {
+      if (!isResizing) return;
+      const delta = e.clientX - resizeStartX;
+      const newWidth = Math.max(80, resizeStartWidth + delta);
+      document.getElementById('requestList').style.setProperty('--url-col-w', newWidth + 'px');
+    }
+
+    function stopColResize() {
+      isResizing = false;
+      document.removeEventListener('mousemove', onColResize);
+      document.removeEventListener('mouseup', stopColResize);
     }
 
     function renderRules() {
@@ -1001,19 +1135,7 @@
       for (let i = 0; i < mockRules.length; i++) {
         const r = mockRules[i];
         if (r.method && r.method.toUpperCase() !== method.toUpperCase()) continue;
-        let pattern;
-        if (r.isRegex) {
-          pattern = r.urlPattern;
-        } else {
-          // Same logic as Dart: placeholder for *, escape all metacharacters, restore .*
-          pattern = r.urlPattern
-            .replace(/\*/g, '\x00')
-            .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-            .replace(/\x00/g, '.*');
-        }
-        try {
-          if (new RegExp('^' + pattern + '$').test(url)) return r;
-        } catch(e) {}
+        if (r.urlPattern === url) return r;
       }
       return null;
     }
@@ -1126,6 +1248,107 @@
       );
     }
 
+    // Token-based JSON highlighter — handles all value contexts (objects, arrays, top-level)
+    function syntaxHLRaw(rawStr) {
+      if (!rawStr) return '';
+      let out = '';
+      let i = 0;
+      const n = rawStr.length;
+
+      while (i < n) {
+        const ch = rawStr[i];
+
+        if (ch === '"') {
+          // Collect full string literal (handling escape sequences)
+          let str = '"';
+          i++;
+          while (i < n) {
+            const c = rawStr[i++];
+            str += c;
+            if (c === '\\') { if (i < n) str += rawStr[i++]; }
+            else if (c === '"') break;
+          }
+          // Look ahead past whitespace: if followed by ':', this is a key
+          let j = i;
+          while (j < n && (rawStr[j] === ' ' || rawStr[j] === '\t' || rawStr[j] === '\r' || rawStr[j] === '\n')) j++;
+          out += rawStr[j] === ':'
+            ? '<span class="jk">' + esc(str) + '</span>'
+            : '<span class="js">' + esc(str) + '</span>';
+        } else if (ch === 't' && rawStr.startsWith('true', i)) {
+          out += '<span class="jb">true</span>';
+          i += 4;
+        } else if (ch === 'f' && rawStr.startsWith('false', i)) {
+          out += '<span class="jb">false</span>';
+          i += 5;
+        } else if (ch === 'n' && rawStr.startsWith('null', i)) {
+          out += '<span class="jnull">null</span>';
+          i += 4;
+        } else if (ch === '-' || (ch >= '0' && ch <= '9')) {
+          let num = '';
+          while (i < n) {
+            const c = rawStr[i];
+            if (c === '-' || c === '+' || c === '.' || c === 'e' || c === 'E' || (c >= '0' && c <= '9')) {
+              num += c; i++;
+            } else break;
+          }
+          out += '<span class="jn">' + esc(num) + '</span>';
+        } else {
+          out += esc(ch);
+          i++;
+        }
+      }
+
+      if (out.endsWith('\n')) out += '\u200B';
+      return out;
+    }
+
+    // Set the status code select to the closest available option.
+    // If the code isn't in the list (e.g. from a real server response),
+    // pick the nearest available value so the select always shows something valid.
+    function setStatusCode(code) {
+      const sel = document.getElementById('fStatusCode');
+      const target = parseInt(code, 10) || 200;
+      // Try exact match first
+      for (const opt of sel.options) {
+        if (parseInt(opt.value, 10) === target) { sel.value = opt.value; return; }
+      }
+      // Fall back to the closest value
+      let closest = sel.options[0];
+      let minDiff = Infinity;
+      for (const opt of sel.options) {
+        const diff = Math.abs(parseInt(opt.value, 10) - target);
+        if (diff < minDiff) { minDiff = diff; closest = opt; }
+      }
+      sel.value = closest.value;
+    }
+
+    function prettyFormatBody() {
+      const ta = document.getElementById('fBody');
+      const val = (ta.value || '').trim();
+      if (!val) return;
+      try {
+        ta.value = JSON.stringify(JSON.parse(val), null, 2);
+        updateMockBodyHighlight();
+      } catch(e) {
+        // Not valid JSON — leave as-is
+      }
+    }
+
+    function updateMockBodyHighlight() {
+      const ta = document.getElementById('fBody');
+      const hl = document.getElementById('fBodyHighlight');
+      if (!ta || !hl) return;
+      hl.innerHTML = syntaxHLRaw(ta.value || ta.placeholder || '');
+    }
+
+    function syncMockBodyScroll() {
+      const ta = document.getElementById('fBody');
+      const hl = document.getElementById('fBodyHighlight');
+      if (!ta || !hl) return;
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
+    }
+
     // ---- Mock editor ----
     function openMockEditor(prefill) {
       editingRuleId = null;
@@ -1135,12 +1358,12 @@
       document.getElementById('fUrlPattern').value = prefill?.url || '';
       document.getElementById('fMethod').value = prefill?.method || '';
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = prefill?.statusCode || 200;
+      setStatusCode(prefill?.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = prefill?.body || '';
       document.getElementById('fHeaders').value = '{"content-type":"application/json"}';
-      document.getElementById('fIsRegex').checked = false;
       document.getElementById('mockOverlay').classList.add('open');
+      updateMockBodyHighlight();
     }
 
     function openModifyFromDetail() {
@@ -1153,12 +1376,12 @@
       document.getElementById('fUrlPattern').value = entry.url;
       document.getElementById('fMethod').value = entry.method;
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = tryStringify(entry.responseBody);
       document.getElementById('fHeaders').value = JSON.stringify(entry.responseHeaders || {"content-type":"application/json"});
-      document.getElementById('fIsRegex').checked = false;
       document.getElementById('mockOverlay').classList.add('open');
+      updateMockBodyHighlight();
     }
 
     function editMockRule(ruleId) {
@@ -1171,12 +1394,12 @@
       document.getElementById('fUrlPattern').value = rule.urlPattern;
       document.getElementById('fMethod').value = rule.method || '';
       document.getElementById('fAction').value = rule.action;
-      document.getElementById('fStatusCode').value = rule.mockResponse?.statusCode || 200;
+      setStatusCode(rule.mockResponse?.statusCode || 200);
       document.getElementById('fDelay').value = rule.mockResponse?.delayMs || 0;
       document.getElementById('fBody').value = tryStringify(rule.mockResponse?.body);
       document.getElementById('fHeaders').value = JSON.stringify(rule.mockResponse?.headers || {});
-      document.getElementById('fIsRegex').checked = rule.isRegex;
       document.getElementById('mockOverlay').classList.add('open');
+      updateMockBodyHighlight();
     }
 
     function closeMockEditor() {
@@ -1191,7 +1414,7 @@
           command: 'modifyResponse',
           data: {
             requestId: modifyRequestId,
-            statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+            statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
             headers: tryParse(document.getElementById('fHeaders').value) || {},
             body: tryParse(document.getElementById('fBody').value),
           },
@@ -1207,11 +1430,10 @@
         id: editingRuleId || 'rule_' + Date.now(),
         urlPattern: document.getElementById('fUrlPattern').value,
         method: document.getElementById('fMethod').value || null,
-        isRegex: document.getElementById('fIsRegex').checked,
         enabled: true,
         action: document.getElementById('fAction').value,
         mockResponse: {
-          statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+          statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
           headers: tryParse(document.getElementById('fHeaders').value) || {"content-type":"application/json"},
           body: tryParse(document.getElementById('fBody').value),
           delayMs: parseInt(document.getElementById('fDelay').value) || 0,
@@ -1235,17 +1457,6 @@
       mockRules = mockRules.filter(r => r.id !== ruleId);
       vscode.postMessage({ command: 'removeMockRule', data: { ruleId } });
       render();
-    }
-
-    function applyPreset(status, body) {
-      document.getElementById('fStatusCode').value = status;
-      document.getElementById('fBody').value = body;
-    }
-    function applyPresetDelay(ms) {
-      document.getElementById('fDelay').value = ms;
-    }
-    function applyPresetEmpty() {
-      document.getElementById('fBody').value = '[]';
     }
 
     // ---- Actions ----
@@ -1292,36 +1503,22 @@
         return;
       }
 
-      // Convert full URL to a glob pattern: strip query params, wrap with *
-      // https://api.example.com/v1/users?page=1 → */v1/users*
-      const globPattern = urlToGlob(entry.url);
-
       // Pre-fill the mock editor with this request's data
       editingRuleId = null;
       modifyRequestId = null;
       document.getElementById('mockEditorTitle').textContent = 'Mock: ' + entry.method + ' ' + extractPath(entry.url);
       document.getElementById('btnSaveMock').textContent = 'Save & enable mock';
-      document.getElementById('fUrlPattern').value = globPattern;
+      document.getElementById('fUrlPattern').value = entry.url;
       document.getElementById('fMethod').value = entry.method;
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = tryStringify(entry.responseBody);
       document.getElementById('fHeaders').value = JSON.stringify(
         entry.responseHeaders || {"content-type":"application/json"}
       );
-      document.getElementById('fIsRegex').checked = false;
       document.getElementById('mockOverlay').classList.add('open');
-    }
-
-    function urlToGlob(url) {
-      try {
-        const u = new URL(url);
-        // Use pathname only, wrap with * to match any base URL and query params
-        return '*' + u.pathname + '*';
-      } catch {
-        return '*' + url + '*';
-      }
+      updateMockBodyHighlight();
     }
 
     function toggleMockRule(ruleId, enabled) {
@@ -1414,16 +1611,16 @@
     document.getElementById('toolbar').addEventListener('click', function(e) {
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
-      var action = btn.dataset.action;
-      if (action === 'clear') clearTraffic();
-      if (action === 'mock') openMockEditor();
+      if (btn.dataset.action === 'mock') openMockEditor();
     });
 
     // Filter input
     document.getElementById('filterInput').addEventListener('input', applyFilter);
 
-    // Main tab bar
+    // Main tab bar (tabs + clear traffic button)
     document.getElementById('tabBar').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-action]');
+      if (btn && btn.dataset.action === 'clear') { clearTraffic(); return; }
       var tab = e.target.closest('[data-tab]');
       if (tab) switchMainTab(tab, tab.dataset.tab);
     });
@@ -1476,22 +1673,8 @@
       if (tab) switchDetailTab(tab, tab.dataset.dtab);
     });
 
-    // Mock overlay (backdrop click, all buttons, presets)
+    // Mock overlay (action buttons)
     document.getElementById('mockOverlay').addEventListener('click', function(e) {
-      // Click on backdrop (the overlay itself) closes
-      if (e.target === e.currentTarget) return closeMockEditor();
-
-      // Preset buttons
-      var preset = e.target.closest('[data-preset]');
-      if (preset) {
-        var p = JSON.parse(preset.dataset.preset);
-        if (p.status !== undefined) applyPreset(p.status, p.body || '');
-        if (p.delay !== undefined) applyPresetDelay(p.delay);
-        if (p.empty) applyPresetEmpty();
-        return;
-      }
-
-      // Action buttons
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
       var action = btn.dataset.action;
@@ -1499,6 +1682,11 @@
       if (action === 'cancel-modal') closeMockEditor();
       if (action === 'close-modal') closeMockEditor();
     });
+
+    // Mock editor JSON body highlighting
+    document.getElementById('fBody').addEventListener('input', updateMockBodyHighlight);
+    document.getElementById('fBody').addEventListener('scroll', syncMockBodyScroll);
+    document.getElementById('btnFormatBody').addEventListener('click', prettyFormatBody);
 
     // Init
     vscode.postMessage({ command: 'getEntries' });

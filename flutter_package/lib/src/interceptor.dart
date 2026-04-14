@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 
+import 'config.dart';
 import 'inspector_client.dart';
 import 'mock_store.dart';
 import 'models.dart';
@@ -45,16 +46,16 @@ class NetInspectorInterceptor extends Interceptor {
   bool get isConnected => _client.isConnected;
 
   NetInspectorInterceptor({
-    String host = '127.0.0.1',
-    int port = 9555,
+    String? host,
+    int? port,
     this.breakpointTimeout = const Duration(seconds: 30),
     InspectorClient? client,
-  })  : _client = client ??
+  }) : _client = client ??
             InspectorClient(
-              host: host,
-              port: port,
+              host: host ?? NetInspectorConfig.host,
+              port: port ?? NetInspectorConfig.port,
             ),
-        _mockStore = MockRuleStore() {
+       _mockStore = MockRuleStore() {
     // Listen for commands from VSCode
     _client.messages.listen(_handleVSCodeMessage);
   }
@@ -91,8 +92,7 @@ class NetInspectorInterceptor extends Interceptor {
   // ---------------------------------------------------------------------------
 
   @override
-  void onRequest(
-      RequestOptions options, RequestInterceptorHandler handler) {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final requestId = _nextRequestId();
     // Tag the request so we can correlate it later
     options.extra['_inspector_id'] = requestId;
@@ -108,8 +108,9 @@ class NetInspectorInterceptor extends Interceptor {
       url: url,
       headers: options.headers.map((k, v) => MapEntry(k, v.toString())),
       body: options.data,
-      queryParameters:
-          options.queryParameters.map((k, v) => MapEntry(k, v.toString())),
+      queryParameters: options.queryParameters.map(
+        (k, v) => MapEntry(k, v.toString()),
+      ),
     );
     _client.sendRequest(captured.toMap());
 
@@ -126,36 +127,10 @@ class NetInspectorInterceptor extends Interceptor {
         return;
       }
 
-      // Simulate delay if configured
-      if (mock.delayMs != null && mock.delayMs! > 0) {
-        Future.delayed(Duration(milliseconds: mock.delayMs!), () {
-          handler.resolve(
-            Response(
-              requestOptions: options,
-              statusCode: mock.statusCode,
-              headers: Headers.fromMap(
-                mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
-              ),
-              data: _parseResponseBody(mock.body),
-            ),
-            true, // call resolveCallbackFilter
-          );
-        });
-      } else {
-        handler.resolve(
-          Response(
-            requestOptions: options,
-            statusCode: mock.statusCode,
-            headers: Headers.fromMap(
-              mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
-            ),
-            data: _parseResponseBody(mock.body),
-          ),
-          true,
-        );
-      }
+      // Mark so onResponse/onError skip duplicate notifications for this request
+      options.extra['_inspector_mocked'] = true;
 
-      // Also notify VSCode that this was mocked
+      // Notify VSCode so the panel shows the mock result immediately
       _client.sendResponse({
         'requestId': requestId,
         'statusCode': mock.statusCode,
@@ -164,6 +139,42 @@ class NetInspectorInterceptor extends Interceptor {
         'durationMs': mock.delayMs ?? 0,
         'mocked': true,
       });
+
+      final mockResponse = Response(
+        requestOptions: options,
+        statusCode: mock.statusCode,
+        statusMessage: _httpStatusMessage(mock.statusCode),
+        headers: Headers.fromMap(
+          mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
+        ),
+        data: _parseResponseBody(mock.body),
+      );
+
+      // Determine whether this status code should trigger Dio's error flow,
+      // using the same validateStatus the caller configured (default: 2xx only).
+      final isSuccess = options.validateStatus(mock.statusCode);
+
+      void dispatchMock() {
+        if (isSuccess) {
+          handler.resolve(mockResponse, true);
+        } else {
+          // Reject so Dio raises a DioException and the app's catch blocks fire
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: mockResponse,
+              type: DioExceptionType.badResponse,
+            ),
+          );
+        }
+      }
+
+      // Simulate delay if configured
+      if (mock.delayMs != null && mock.delayMs! > 0) {
+        Future.delayed(Duration(milliseconds: mock.delayMs!), dispatchMock);
+      } else {
+        dispatchMock();
+      }
 
       return;
     }
@@ -174,8 +185,7 @@ class NetInspectorInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) async {
-    final requestId =
-        response.requestOptions.extra['_inspector_id'] as String?;
+    final requestId = response.requestOptions.extra['_inspector_id'] as String?;
     if (requestId == null) {
       handler.next(response);
       return;
@@ -185,6 +195,13 @@ class NetInspectorInterceptor extends Interceptor {
     final durationMs = startTime != null
         ? DateTime.now().difference(startTime).inMilliseconds
         : 0;
+
+    // Skip re-notification for mock-resolved responses (already sent from onRequest)
+    if (response.requestOptions.extra['_inspector_mocked'] == true) {
+      _requestTimings.remove(requestId);
+      handler.next(response);
+      return;
+    }
 
     final url = response.requestOptions.uri.toString();
     final method = response.requestOptions.method;
@@ -209,14 +226,16 @@ class NetInspectorInterceptor extends Interceptor {
       _pendingBreakpoints[requestId] = completer;
 
       // Notify VSCode that this response is paused
-      _client.send(InspectorMessage(
-        type: MessageType.response_captured,
-        id: requestId,
-        payload: {
-          ...captured.toMap(),
-          'breakpoint': true, // tells VSCode UI to highlight this
-        },
-      ));
+      _client.send(
+        InspectorMessage(
+          type: MessageType.response_captured,
+          id: requestId,
+          payload: {
+            ...captured.toMap(),
+            'breakpoint': true, // tells VSCode UI to highlight this
+          },
+        ),
+      );
 
       try {
         // Wait for VSCode to send back modified response or resume
@@ -226,14 +245,16 @@ class NetInspectorInterceptor extends Interceptor {
         if (modified != null) {
           // VSCode sent back a modified response
           _log('MODIFIED: $method $url → ${modified.statusCode}');
-          handler.resolve(Response(
-            requestOptions: response.requestOptions,
-            statusCode: modified.statusCode,
-            headers: Headers.fromMap(
-              modified.headers.map((k, v) => MapEntry(k, [v.toString()])),
+          handler.resolve(
+            Response(
+              requestOptions: response.requestOptions,
+              statusCode: modified.statusCode,
+              headers: Headers.fromMap(
+                modified.headers.map((k, v) => MapEntry(k, [v.toString()])),
+              ),
+              data: _parseResponseBody(modified.body),
             ),
-            data: _parseResponseBody(modified.body),
-          ));
+          );
           return;
         }
       } on TimeoutException {
@@ -255,14 +276,18 @@ class NetInspectorInterceptor extends Interceptor {
           ? DateTime.now().difference(startTime).inMilliseconds
           : 0;
 
-      _client.sendError(requestId, {
-        'requestId': requestId,
-        'type': err.type.name,
-        'message': err.message ?? 'Unknown error',
-        'statusCode': err.response?.statusCode,
-        'url': err.requestOptions.uri.toString(),
-        'durationMs': durationMs,
-      });
+      // Skip duplicate notification for mocked errors — response_captured
+      // was already sent from onRequest with the correct status and body.
+      if (err.requestOptions.extra['_inspector_mocked'] != true) {
+        _client.sendError(requestId, {
+          'requestId': requestId,
+          'type': err.type.name,
+          'message': err.message ?? 'Unknown error',
+          'statusCode': err.response?.statusCode,
+          'url': err.requestOptions.uri.toString(),
+          'durationMs': durationMs,
+        });
+      }
     }
 
     handler.next(err);
@@ -342,10 +367,7 @@ class NetInspectorInterceptor extends Interceptor {
       await _dio!.request(
         url,
         data: body,
-        options: Options(
-          method: method,
-          headers: headers,
-        ),
+        options: Options(method: method, headers: headers),
       );
     } catch (e) {
       _log('REPLAY error: $e');
@@ -383,6 +405,34 @@ class NetInspectorInterceptor extends Interceptor {
     } catch (_) {
       return str;
     }
+  }
+
+  static String _httpStatusMessage(int code) {
+    const phrases = {
+      100: 'Continue',
+      101: 'Switching Protocols',
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      204: 'No Content',
+      301: 'Moved Permanently',
+      302: 'Found',
+      304: 'Not Modified',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      403: 'Forbidden',
+      404: 'Not Found',
+      405: 'Method Not Allowed',
+      409: 'Conflict',
+      410: 'Gone',
+      422: 'Unprocessable Entity',
+      429: 'Too Many Requests',
+      500: 'Internal Server Error',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable',
+      504: 'Gateway Timeout',
+    };
+    return phrases[code] ?? '';
   }
 
   void _log(String msg) {

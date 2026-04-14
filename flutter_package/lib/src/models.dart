@@ -116,9 +116,8 @@ class CapturedResponse {
 /// A mock rule pushed from VSCode to intercept matching requests
 class MockRule {
   final String id;
-  final String urlPattern; // glob-style: */users*, regex also supported
+  final String urlPattern; // exact URL string match
   final String? method; // null = match all methods
-  final bool isRegex;
   final bool enabled;
   final MockRuleAction action;
   final MockResponseData? mockResponse;
@@ -127,7 +126,6 @@ class MockRule {
     required this.id,
     required this.urlPattern,
     this.method,
-    this.isRegex = false,
     this.enabled = true,
     this.action = MockRuleAction.mockBeforeRequest,
     this.mockResponse,
@@ -137,7 +135,6 @@ class MockRule {
         id: map['id'] as String,
         urlPattern: map['urlPattern'] as String,
         method: map['method'] as String?,
-        isRegex: map['isRegex'] as bool? ?? false,
         enabled: map['enabled'] as bool? ?? true,
         action: MockRuleAction.values.byName(
           map['action'] as String? ?? 'mockBeforeRequest',
@@ -148,28 +145,14 @@ class MockRule {
             : null,
       );
 
-  /// Check if this rule matches a given request
+  /// Check if this rule matches a given request (exact URL comparison)
   bool matches(String url, String requestMethod) {
     if (!enabled) return false;
     if (method != null &&
         method!.toUpperCase() != requestMethod.toUpperCase()) {
       return false;
     }
-    if (isRegex) {
-      return RegExp(urlPattern).hasMatch(url);
-    }
-    // Glob-style matching: * matches anything
-    // 1. Temporarily replace * with a placeholder
-    // 2. Escape ALL regex metacharacters in the rest
-    // 3. Replace placeholder with .*
-    final escaped = urlPattern
-        .replaceAll('*', '\x00')
-        .replaceAllMapped(
-          RegExp(r'[.+?^${}()|[\]\\]'),
-          (m) => '\\${m[0]}',
-        )
-        .replaceAll('\x00', '.*');
-    return RegExp('^$escaped\$').hasMatch(url);
+    return urlPattern == url;
   }
 }
 

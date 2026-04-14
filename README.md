@@ -2,123 +2,193 @@
 
 A **Flipper/Stetho-like** network debugging tool for Flutter apps using Dio.
 
-Two components:
-1. **Dart package** — A Dio interceptor that captures all network traffic and supports real-time mocking
-2. **VSCode extension** — A desktop dashboard that displays network traffic and lets you create mock rules, set breakpoints, and modify responses live
+Two components work together:
+
+| Component | Purpose |
+|---|---|
+| **Dart package** | Dio interceptor — captures traffic, applies mocks, manages the WebSocket connection to VSCode |
+| **VSCode extension** | Dashboard — displays live traffic, lets you create mock rules, set breakpoints, and modify responses in real-time |
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────┐         WebSocket          ┌─────────────────────────┐
-│    Flutter App       │ ◄──── (port 9555) ────►   │   VSCode Extension      │
-│                      │                            │                         │
-│  Dio                 │   request_captured ──────► │  WebSocket Server       │
-│   └─ Interceptor     │   response_captured ────►  │   └─ SessionManager     │
-│       ├─ MockStore   │                            │       └─ WebView Panel  │
-│       └─ WS Client   │  ◄── mock_rule_add ────── │           ├─ Traffic Log │
-│                      │  ◄── modify_response ───── │           ├─ Mock Editor │
-│                      │  ◄── resume_response ───── │           └─ Detail View│
-└─────────────────────┘                            └─────────────────────────┘
+┌─────────────────────┐         WebSocket          ┌──────────────────────────┐
+│    Flutter App       │ ◄──── (port 9555) ────►   │   VSCode Extension       │
+│                      │                            │                          │
+│  Dio                 │   request_captured ──────► │  WebSocket Server        │
+│   └─ Interceptor     │   response_captured ────►  │   └─ SessionManager      │
+│       ├─ MockStore   │                            │       └─ WebView Panel   │
+│       └─ WS Client   │  ◄── mock_rule_add ─────── │           ├─ Traffic Log  │
+│                      │  ◄── modify_response ────── │           ├─ Mock Editor  │
+│                      │  ◄── resume_response ─────── │           └─ Detail View │
+└─────────────────────┘                            └──────────────────────────┘
 ```
 
-## Interception Modes
+---
 
-### 1. Passthrough (default)
-All requests flow normally. The interceptor just captures and forwards metadata to VSCode for display. Zero impact on app behavior.
+## Quick Start
 
-### 2. Mock Before Request
-When a mock rule with `action: mockBeforeRequest` matches a request URL + method, the interceptor short-circuits — it never hits the real server. Instead, it returns the mock response you configured in VSCode immediately.
+### 1. Install the VSCode extension
 
-**Use case**: Test error states, simulate slow responses, work offline.
+```bash
+cd vscode_extension
+npm install
+npm run build:vsix          # produces flutter-net-inspector-x.x.x.vsix
+code --install-extension flutter-net-inspector-*.vsix
+```
 
-### 3. Breakpoint (Pause & Edit)
-When a mock rule with `action: breakpoint` matches, the real request goes through to the server normally. But when the response comes back, it's **paused** — the interceptor holds it via a `Completer` and sends the response data to VSCode for editing.
+For development, press **F5** inside `vscode_extension/` to launch an Extension Development Host.
 
-In VSCode, you see the response highlighted yellow ("PAUSED"). You can:
-- **Resume**: Let the original response through unchanged
-- **Modify & Send**: Edit the status code, headers, or body, then send the modified version back to the app
-
-The interceptor has a configurable timeout (default 30s) — if you don't act, the original response resumes automatically.
-
-**Use case**: Debug specific API responses, test edge cases with real request data, simulate server-side changes without deploying.
-
-## Setup
-
-### Flutter Package
+### 2. Add the Dart package
 
 ```yaml
 # pubspec.yaml
 dependencies:
   flutter_net_inspector:
     path: ../flutter_net_inspector/flutter_package
-    # or publish to a private registry
 ```
+
+### 3. Configure host (once, before DI)
+
+The package auto-detects the right host for emulators. For **real devices** you need your machine's LAN IP.
+
+```dart
+// main.dart — before your DI graph is built
+void main() {
+  // Emulators: auto-detected (Android → 10.0.2.2, iOS/others → 127.0.0.1)
+  // Real device: set your machine's LAN IP, or use --dart-define (see below)
+  // NetInspectorConfig.host = '192.168.1.42';
+
+  configureDependencies();
+  runApp(MyApp());
+}
+```
+
+Or pass it at run time without touching code:
+
+```bash
+flutter run --dart-define=INSPECTOR_HOST=192.168.1.42
+```
+
+Add that flag to your IDE launch configuration so each developer sets their own IP without changing shared code.
+
+### 4. Wire up the interceptor
 
 ```dart
 import 'package:flutter_net_inspector/flutter_net_inspector.dart';
 
-// In your dependency injection setup:
-final inspector = NetInspectorInterceptor(
-  host: '127.0.0.1',  // localhost for emulators
-  port: 9555,
-);
+// DI module — no host/port needed, NetInspectorConfig handles it
+@singleton
+NetInspectorInterceptor provideNetInspectorInterceptor() {
+  return NetInspectorInterceptor();
+}
 
-// Connect (non-blocking, auto-reconnects)
-await inspector.connect();
+@singleton
+Dio provideDio(NetInspectorInterceptor inspector) {
+  final dio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl));
+  if (kDebugMode) {
+    dio.interceptors.insert(0, inspector); // must be first
+    inspector.attachDio(dio);             // enables request replay
+  }
+  return dio;
+}
 
-// Add to Dio FIRST (before auth interceptors, etc.)
-dio.interceptors.insert(0, inspector);
+// main.dart — connect after DI
+if (kDebugMode) {
+  await getIt<NetInspectorInterceptor>().connect();
+}
 ```
 
-**For Android emulator**: Use `10.0.2.2` instead of `127.0.0.1` to reach the host machine.
+### 5. Open the dashboard
 
-**For physical devices**: Use your machine's local IP, or set up adb port forwarding:
+Open the VSCode Command Palette → **Flutter Net Inspector: Open Dashboard**.  
+The green dot in the toolbar means the Flutter app is connected.
+
+---
+
+## Device / Host Reference
+
+| Context | Auto-resolved host | Override needed? |
+|---|---|---|
+| iOS Simulator | `127.0.0.1` | No |
+| Android Emulator | `10.0.2.2` | No |
+| Android Real Device | — | Yes — LAN IP or `adb reverse` |
+| iOS Real Device | — | Yes — LAN IP |
+| Remote (Tailscale, etc.) | — | Yes — Tailscale IP |
+
+**`adb reverse` alternative for Android real devices:**
 ```bash
 adb reverse tcp:9555 tcp:9555
+# Then the default 127.0.0.1 / 10.0.2.2 will work
 ```
 
-### VSCode Extension
+---
 
-```bash
-cd vscode_extension
-npm install
-npm run compile
+## Interception Modes
 
-# For development:
-# Press F5 in VSCode to launch Extension Development Host
+### Passthrough (default)
+All requests flow to the real server. The interceptor captures request/response metadata and forwards it to the VSCode dashboard. Zero impact on app behavior.
 
-# For packaging:
-npx @vscode/vsce package
-```
+### Mock Before Request
+When a mock rule matches a request's URL + method, the interceptor short-circuits — it never contacts the real server. It returns the mock response you configured (status code, headers, body, optional delay) and triggers the app's normal error flow for 4xx/5xx codes (i.e., your `catch (DioException e)` blocks still fire).
 
-Then install the `.vsix` file via VSCode → Extensions → Install from VSIX.
+**Use cases:** Test error states, simulate slow responses, work offline, reproduce edge cases.
 
-## Usage
+### Breakpoint (Pause & Edit)
+When a breakpoint rule matches, the real request goes through to the server. When the response arrives, it's **paused** in the interceptor. The VSCode dashboard highlights the row yellow ("PAUSED").
 
-1. Open VSCode, run command: **Flutter Net Inspector: Open Dashboard**
-2. Run your Flutter app (with the interceptor connected)
-3. The green dot in the toolbar indicates connection
+From the dashboard you can:
+- **Resume** — let the original response through unchanged
+- **Modify & Send** — edit status code, headers, or body, then send the modified version to the app
 
-### Creating a Mock Rule
+A configurable timeout (default 30 s) auto-resumes the original response if you don't act.
 
-Click **"+ Mock Rule"** in the toolbar:
+**Use cases:** Debug edge cases with real data, simulate server-side changes without deploying.
 
-| Field        | Description                                              |
-|------------- |--------------------------------------------------------- |
-| URL pattern  | Glob (`*/users*`) or regex match against the full URL    |
-| Method       | HTTP method filter (or "Any")                            |
-| Status code  | Response status code to return                           |
-| Action       | `Mock (skip server)` or `Breakpoint (pause)`             |
-| Delay        | Simulated latency in milliseconds                        |
-| Body         | JSON response body                                       |
+---
 
-### Breakpoint Workflow
+## Dashboard Features
 
-1. Add a mock rule with action = **Breakpoint**
-2. Trigger the matching request in your app
-3. The response row appears **yellow** in the dashboard with a "PAUSED" badge
-4. Click the row → click **"Modify & Send"** → edit the JSON → click **"Send modified response"**
-5. The app receives your modified response and continues
+### Traffic list
+- **Filter** — search by URL, method, or status code using the toolbar input
+- **Tabs** — All / XHR / Mocked / Errors / Mock Rules
+- **Sort by time** — click the Time column header to toggle ascending/descending
+- **Resize URL column** — drag the divider on the URL column header
+- **Clear traffic** — the **⊘ Clear traffic** button on the right side of the tab bar clears all captured entries
+
+### Request detail panel
+Select any row to open the detail panel (slides in from the right):
+- **Overview** — URL, method, status, duration, query parameters, error info
+- **Request** — request body with JSON syntax highlighting
+- **Response** — response body with JSON syntax highlighting
+- **Headers** — request and response headers
+
+Action buttons: **↻ Replay**, **✦ Mock this**, **▶ Resume** (breakpoint only).
+
+### Mock editor
+Open via **+ Mock** in the toolbar, or **✦ Mock this** on a selected request.
+
+| Field | Description |
+|---|---|
+| URL | Exact URL to match (including query string) |
+| Method | HTTP method filter, or "Any method" |
+| Action | Mock (skip server) or Breakpoint (pause response) |
+| Status code | Dropdown of standard HTTP codes (grouped by 1xx–5xx) |
+| Delay (ms) | Simulated latency |
+| Response headers | JSON object |
+| Response body | JSON editor with syntax highlighting and **{ } Format** button |
+
+**"✦ Mock this"** pre-fills the editor with the selected request's URL and the actual response body/status from the captured entry — change only what you need.
+
+### Mock rules panel
+The **Mock Rules** tab shows all active rules as cards. Toggle rules on/off without deleting them.
+
+### Rule persistence
+Mock rules are saved to `.vscode/net-inspector-rules.json` in your workspace. Commit this file to share mock setups with your team. Rules are automatically loaded and pushed to connected apps when the extension activates.
+
+---
 
 ## Protocol Reference
 
@@ -126,79 +196,72 @@ All messages are JSON over WebSocket:
 
 ```json
 {
-  "type": "request_captured | response_captured | mock_rule_add | ...",
-  "id": "unique_id",
+  "type": "request_captured",
+  "id": "req_42",
   "payload": { ... },
-  "timestamp": "2024-01-01T00:00:00.000Z"
+  "timestamp": "2026-04-14T10:00:00.000Z"
 }
 ```
 
 ### Flutter → VSCode
 
-| Type                | Payload                                             |
-|-------------------- |---------------------------------------------------- |
-| `request_captured`  | id, method, url, headers, body, queryParameters     |
-| `response_captured` | requestId, statusCode, headers, body, durationMs    |
-| `error_captured`    | requestId, type, message, statusCode, durationMs    |
-| `app_connected`     | appId, platform, dartVersion                        |
+| Type | Payload |
+|---|---|
+| `request_captured` | id, method, url, headers, body, queryParameters |
+| `response_captured` | requestId, statusCode, headers, body, durationMs, mocked |
+| `error_captured` | requestId, type, message, statusCode, durationMs |
+| `app_connected` | appId, platform, dartVersion |
+| `app_disconnected` | (empty) |
 
 ### VSCode → Flutter
 
-| Type               | Payload                                              |
-|------------------- |----------------------------------------------------- |
-| `mock_rule_add`    | id, urlPattern, method, action, mockResponse         |
-| `mock_rule_remove` | ruleId                                               |
-| `mock_rule_update` | (same as add, overwrites by id)                      |
-| `mock_rule_clear`  | (empty)                                              |
-| `modify_response`  | requestId, statusCode, headers, body                 |
-| `resume_response`  | requestId                                            |
+| Type | Payload |
+|---|---|
+| `mock_rule_add` | id, urlPattern, method, enabled, action, mockResponse |
+| `mock_rule_remove` | ruleId |
+| `mock_rule_update` | (same as add, overwrites by id) |
+| `mock_rule_clear` | (empty) |
+| `modify_response` | requestId, statusCode, headers, body |
+| `resume_response` | requestId |
+| `replay_request` | method, url, headers, body |
 
-## Development Roadmap
+---
 
-### Phase 1 (Current) ✅
-- [x] Dio interceptor with passthrough capture
-- [x] Mock before request (skip server)
-- [x] Breakpoint mode (pause & edit response)
-- [x] WebSocket communication protocol
-- [x] VSCode extension with WebView dashboard
-- [x] Basic traffic filtering
-- [x] JSON syntax highlighting in detail view
-- [x] Quick mock presets (401, 404, 500, slow responses, etc.)
-- [x] Mock rule persistence (`.vscode/net-inspector-rules.json`)
-- [x] HAR file export
-- [x] Request replay (re-fire captured requests from VSCode)
+## Troubleshooting
 
-### Phase 2
+| Symptom | Fix |
+|---|---|
+| Dashboard shows "Waiting..." | Run your Flutter app with the interceptor connected; check the port isn't blocked |
+| Android real device can't connect | Set `NetInspectorConfig.host` to your machine's LAN IP, or run `adb reverse tcp:9555 tcp:9555` |
+| Mock returns `500` but app doesn't throw | Ensure your Dio instance doesn't have a custom `validateStatus` that accepts all codes |
+| Mock fires but body is `null` | The response body field in the editor was empty — pre-fill it via "✦ Mock this" or paste your JSON |
+| Extension won't compile | Run `npm install` then `npm run compile` in `vscode_extension/` |
+
+---
+
+## Roadmap
+
+### Done ✅
+- Dio interceptor with passthrough capture
+- Mock before request (skip server, correct error flow for 4xx/5xx)
+- Breakpoint mode (pause & edit response)
+- WebSocket communication with auto-reconnect
+- VSCode extension dashboard
+- Exact URL matching for mock rules
+- Platform-aware host auto-detection (`NetInspectorConfig`)
+- `--dart-define` host/port override for teams
+- Sortable time column, resizable URL column
+- JSON syntax highlighting + pretty-print button
+- Standard HTTP status code dropdown (1xx–5xx)
+- Mock rule persistence (`.vscode/net-inspector-rules.json`)
+- Request replay
+- HAR export
+
+### Planned
 - [ ] Import HAR files
 - [ ] Response diff view (original vs modified)
-- [ ] Mock rule presets as sharable files
-
-### Phase 3
-- [ ] Conditional mock rules (match by header, body content, query params)
-- [ ] Proxy mode (intercept even without Dio — system-wide via HttpOverrides)
-- [ ] Response recording (capture and replay entire sessions)
-- [ ] Performance metrics (request timeline, waterfall view)
-- [ ] GraphQL support (query/mutation-level inspection)
-
-### Phase 4
-- [ ] Team sharing (shared mock rule sets via git)
+- [ ] Shareable mock rule file sets
+- [ ] Conditional rules (match by header, body content, query params)
+- [ ] Proxy mode (system-wide via `HttpOverrides`, no Dio dependency)
+- [ ] Response recording and session replay
 - [ ] CI integration (run tests with pre-configured mocks)
-- [ ] Dedicated desktop app alternative (Electron/Tauri) for non-VSCode users
-
-## Key Design Decisions
-
-### Why WebSocket over DevTools protocol?
-Flutter DevTools extensions use the VM service protocol which is powerful but complex and tightly coupled to the DevTools UI. A raw WebSocket is simpler, portable (works with any IDE), and gives full control over the protocol. You can also connect multiple apps simultaneously.
-
-### Why VSCode extension over standalone app?
-Most Flutter devs already live in VSCode. An extension integrates naturally into the workflow — no context switching. The WebView API gives enough UI capability for a dashboard. If demand exists, a standalone Electron/Tauri app can be added later using the same WebSocket protocol.
-
-### Why not use `dart:io` HttpOverrides?
-`HttpOverrides` intercepts at the `HttpClient` level, which would catch everything including package manager requests, Firebase calls, etc. A Dio interceptor is surgical — it only captures your API traffic. If you want system-wide capture later, `HttpOverrides` can be added as an optional mode.
-
-## Debugging Tips
-
-- **Can't connect?** Check port 9555 isn't blocked. For Android emulator use `10.0.2.2` or `adb reverse`.
-- **iOS simulator**: `127.0.0.1` works directly since the simulator shares the host network.
-- **Tailscale/VPN**: If your Mac Mini server is on Tailscale, you can use the Tailscale IP to inspect traffic from physical devices remotely.
-- **Multiple apps**: The server supports multiple simultaneous connections. Each app gets its own handshake and all traffic is interleaved in the dashboard.
