@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 
+import 'config.dart';
 import 'inspector_client.dart';
 import 'mock_store.dart';
 import 'models.dart';
@@ -45,11 +46,15 @@ class NetInspectorInterceptor extends Interceptor {
   bool get isConnected => _client.isConnected;
 
   NetInspectorInterceptor({
-    String host = '127.0.0.1',
-    int port = 9555,
+    String? host,
+    int? port,
     this.breakpointTimeout = const Duration(seconds: 30),
     InspectorClient? client,
-  }) : _client = client ?? InspectorClient(host: host, port: port),
+  }) : _client = client ??
+            InspectorClient(
+              host: host ?? NetInspectorConfig.host,
+              port: port ?? NetInspectorConfig.port,
+            ),
        _mockStore = MockRuleStore() {
     // Listen for commands from VSCode
     _client.messages.listen(_handleVSCodeMessage);

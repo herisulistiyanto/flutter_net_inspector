@@ -684,9 +684,6 @@
 
       <div class="toolbar-sep"></div>
 
-      <button class="btn btn-sm" data-action="clear" title="Clear all entries">
-        Clear
-      </button>
       <button class="btn btn-sm btn-primary" data-action="mock" title="Add new mock rule">
         + Mock
       </button>
@@ -709,6 +706,10 @@
       <div class="tab" data-tab="rules">
         Mock Rules <span class="count" id="countRules">0</span>
       </div>
+      <button class="btn btn-sm btn-danger" data-action="clear" title="Clear all captured traffic"
+        style="margin-left:auto;align-self:center;margin-right:8px">
+        ⊘ Clear traffic
+      </button>
     </div>
 
     <!-- Request list -->
@@ -1610,16 +1611,16 @@
     document.getElementById('toolbar').addEventListener('click', function(e) {
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
-      var action = btn.dataset.action;
-      if (action === 'clear') clearTraffic();
-      if (action === 'mock') openMockEditor();
+      if (btn.dataset.action === 'mock') openMockEditor();
     });
 
     // Filter input
     document.getElementById('filterInput').addEventListener('input', applyFilter);
 
-    // Main tab bar
+    // Main tab bar (tabs + clear traffic button)
     document.getElementById('tabBar').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-action]');
+      if (btn && btn.dataset.action === 'clear') { clearTraffic(); return; }
       var tab = e.target.closest('[data-tab]');
       if (tab) switchMainTab(tab, tab.dataset.tab);
     });

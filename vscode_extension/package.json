@@ -4,6 +4,7 @@
   "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
   "version": "0.0.1",
   "publisher": "kjokkenkoddinger",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },

@@ -5,6 +5,7 @@
 /// desktop dashboard with real-time request viewing and response mocking.
 library flutter_net_inspector;
 
+export 'src/config.dart';
 export 'src/inspector_client.dart';
 export 'src/interceptor.dart';
 export 'src/mock_store.dart';
