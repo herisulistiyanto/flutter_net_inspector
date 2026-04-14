@@ -126,36 +126,10 @@ class NetInspectorInterceptor extends Interceptor {
         return;
       }
 
-      // Simulate delay if configured
-      if (mock.delayMs != null && mock.delayMs! > 0) {
-        Future.delayed(Duration(milliseconds: mock.delayMs!), () {
-          handler.resolve(
-            Response(
-              requestOptions: options,
-              statusCode: mock.statusCode,
-              headers: Headers.fromMap(
-                mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
-              ),
-              data: _parseResponseBody(mock.body),
-            ),
-            true, // call resolveCallbackFilter
-          );
-        });
-      } else {
-        handler.resolve(
-          Response(
-            requestOptions: options,
-            statusCode: mock.statusCode,
-            headers: Headers.fromMap(
-              mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
-            ),
-            data: _parseResponseBody(mock.body),
-          ),
-          true,
-        );
-      }
+      // Mark so onResponse skips duplicate notification for this request
+      options.extra['_inspector_mocked'] = true;
 
-      // Also notify VSCode that this was mocked
+      // Notify VSCode first so the panel shows the mock immediately
       _client.sendResponse({
         'requestId': requestId,
         'statusCode': mock.statusCode,
@@ -164,6 +138,24 @@ class NetInspectorInterceptor extends Interceptor {
         'durationMs': mock.delayMs ?? 0,
         'mocked': true,
       });
+
+      final mockResponse = Response(
+        requestOptions: options,
+        statusCode: mock.statusCode,
+        headers: Headers.fromMap(
+          mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
+        ),
+        data: _parseResponseBody(mock.body),
+      );
+
+      // Simulate delay if configured
+      if (mock.delayMs != null && mock.delayMs! > 0) {
+        Future.delayed(Duration(milliseconds: mock.delayMs!), () {
+          handler.resolve(mockResponse, true);
+        });
+      } else {
+        handler.resolve(mockResponse, true);
+      }
 
       return;
     }
@@ -185,6 +177,12 @@ class NetInspectorInterceptor extends Interceptor {
     final durationMs = startTime != null
         ? DateTime.now().difference(startTime).inMilliseconds
         : 0;
+
+    // Skip re-notification for mock-resolved responses (already sent from onRequest)
+    if (response.requestOptions.extra['_inspector_mocked'] == true) {
+      handler.next(response);
+      return;
+    }
 
     final url = response.requestOptions.uri.toString();
     final method = response.requestOptions.method;
