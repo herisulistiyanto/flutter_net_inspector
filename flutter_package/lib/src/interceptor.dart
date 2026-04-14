@@ -126,10 +126,10 @@ class NetInspectorInterceptor extends Interceptor {
         return;
       }
 
-      // Mark so onResponse skips duplicate notification for this request
+      // Mark so onResponse/onError skip duplicate notifications for this request
       options.extra['_inspector_mocked'] = true;
 
-      // Notify VSCode first so the panel shows the mock immediately
+      // Notify VSCode so the panel shows the mock result immediately
       _client.sendResponse({
         'requestId': requestId,
         'statusCode': mock.statusCode,
@@ -142,19 +142,37 @@ class NetInspectorInterceptor extends Interceptor {
       final mockResponse = Response(
         requestOptions: options,
         statusCode: mock.statusCode,
+        statusMessage: _httpStatusMessage(mock.statusCode),
         headers: Headers.fromMap(
           mock.headers.map((k, v) => MapEntry(k, [v.toString()])),
         ),
         data: _parseResponseBody(mock.body),
       );
 
+      // Determine whether this status code should trigger Dio's error flow,
+      // using the same validateStatus the caller configured (default: 2xx only).
+      final isSuccess = options.validateStatus(mock.statusCode);
+
+      void dispatchMock() {
+        if (isSuccess) {
+          handler.resolve(mockResponse, true);
+        } else {
+          // Reject so Dio raises a DioException and the app's catch blocks fire
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: mockResponse,
+              type: DioExceptionType.badResponse,
+            ),
+          );
+        }
+      }
+
       // Simulate delay if configured
       if (mock.delayMs != null && mock.delayMs! > 0) {
-        Future.delayed(Duration(milliseconds: mock.delayMs!), () {
-          handler.resolve(mockResponse, true);
-        });
+        Future.delayed(Duration(milliseconds: mock.delayMs!), dispatchMock);
       } else {
-        handler.resolve(mockResponse, true);
+        dispatchMock();
       }
 
       return;
@@ -180,6 +198,7 @@ class NetInspectorInterceptor extends Interceptor {
 
     // Skip re-notification for mock-resolved responses (already sent from onRequest)
     if (response.requestOptions.extra['_inspector_mocked'] == true) {
+      _requestTimings.remove(requestId);
       handler.next(response);
       return;
     }
@@ -253,14 +272,18 @@ class NetInspectorInterceptor extends Interceptor {
           ? DateTime.now().difference(startTime).inMilliseconds
           : 0;
 
-      _client.sendError(requestId, {
-        'requestId': requestId,
-        'type': err.type.name,
-        'message': err.message ?? 'Unknown error',
-        'statusCode': err.response?.statusCode,
-        'url': err.requestOptions.uri.toString(),
-        'durationMs': durationMs,
-      });
+      // Skip duplicate notification for mocked errors — response_captured
+      // was already sent from onRequest with the correct status and body.
+      if (err.requestOptions.extra['_inspector_mocked'] != true) {
+        _client.sendError(requestId, {
+          'requestId': requestId,
+          'type': err.type.name,
+          'message': err.message ?? 'Unknown error',
+          'statusCode': err.response?.statusCode,
+          'url': err.requestOptions.uri.toString(),
+          'durationMs': durationMs,
+        });
+      }
     }
 
     handler.next(err);
@@ -381,6 +404,20 @@ class NetInspectorInterceptor extends Interceptor {
     } catch (_) {
       return str;
     }
+  }
+
+  static String _httpStatusMessage(int code) {
+    const phrases = {
+      100: 'Continue', 101: 'Switching Protocols',
+      200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content',
+      301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
+      400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+      404: 'Not Found', 405: 'Method Not Allowed', 409: 'Conflict',
+      410: 'Gone', 422: 'Unprocessable Entity', 429: 'Too Many Requests',
+      500: 'Internal Server Error', 502: 'Bad Gateway',
+      503: 'Service Unavailable', 504: 'Gateway Timeout',
+    };
+    return phrases[code] ?? 'Unknown';
   }
 
   void _log(String msg) {
