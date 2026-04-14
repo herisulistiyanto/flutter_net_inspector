@@ -785,7 +785,40 @@
         <div class="form-grid">
           <div class="form-row">
             <label class="form-label">Status code</label>
-            <input class="form-input" type="number" id="fStatusCode" value="200">
+            <select class="form-select" id="fStatusCode">
+              <optgroup label="1xx Informational">
+                <option value="100">100 Continue</option>
+                <option value="101">101 Switching Protocols</option>
+              </optgroup>
+              <optgroup label="2xx Success">
+                <option value="200" selected>200 OK</option>
+                <option value="201">201 Created</option>
+                <option value="202">202 Accepted</option>
+                <option value="204">204 No Content</option>
+              </optgroup>
+              <optgroup label="3xx Redirection">
+                <option value="301">301 Moved Permanently</option>
+                <option value="302">302 Found</option>
+                <option value="304">304 Not Modified</option>
+              </optgroup>
+              <optgroup label="4xx Client Error">
+                <option value="400">400 Bad Request</option>
+                <option value="401">401 Unauthorized</option>
+                <option value="403">403 Forbidden</option>
+                <option value="404">404 Not Found</option>
+                <option value="405">405 Method Not Allowed</option>
+                <option value="409">409 Conflict</option>
+                <option value="410">410 Gone</option>
+                <option value="422">422 Unprocessable Entity</option>
+                <option value="429">429 Too Many Requests</option>
+              </optgroup>
+              <optgroup label="5xx Server Error">
+                <option value="500">500 Internal Server Error</option>
+                <option value="502">502 Bad Gateway</option>
+                <option value="503">503 Service Unavailable</option>
+                <option value="504">504 Gateway Timeout</option>
+              </optgroup>
+            </select>
           </div>
           <div class="form-row">
             <label class="form-label">Delay (ms)</label>
@@ -1268,6 +1301,26 @@
       return out;
     }
 
+    // Set the status code select to the closest available option.
+    // If the code isn't in the list (e.g. from a real server response),
+    // pick the nearest available value so the select always shows something valid.
+    function setStatusCode(code) {
+      const sel = document.getElementById('fStatusCode');
+      const target = parseInt(code, 10) || 200;
+      // Try exact match first
+      for (const opt of sel.options) {
+        if (parseInt(opt.value, 10) === target) { sel.value = opt.value; return; }
+      }
+      // Fall back to the closest value
+      let closest = sel.options[0];
+      let minDiff = Infinity;
+      for (const opt of sel.options) {
+        const diff = Math.abs(parseInt(opt.value, 10) - target);
+        if (diff < minDiff) { minDiff = diff; closest = opt; }
+      }
+      sel.value = closest.value;
+    }
+
     function prettyFormatBody() {
       const ta = document.getElementById('fBody');
       const val = (ta.value || '').trim();
@@ -1304,7 +1357,7 @@
       document.getElementById('fUrlPattern').value = prefill?.url || '';
       document.getElementById('fMethod').value = prefill?.method || '';
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = prefill?.statusCode || 200;
+      setStatusCode(prefill?.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = prefill?.body || '';
       document.getElementById('fHeaders').value = '{"content-type":"application/json"}';
@@ -1322,7 +1375,7 @@
       document.getElementById('fUrlPattern').value = entry.url;
       document.getElementById('fMethod').value = entry.method;
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = tryStringify(entry.responseBody);
       document.getElementById('fHeaders').value = JSON.stringify(entry.responseHeaders || {"content-type":"application/json"});
@@ -1340,7 +1393,7 @@
       document.getElementById('fUrlPattern').value = rule.urlPattern;
       document.getElementById('fMethod').value = rule.method || '';
       document.getElementById('fAction').value = rule.action;
-      document.getElementById('fStatusCode').value = rule.mockResponse?.statusCode || 200;
+      setStatusCode(rule.mockResponse?.statusCode || 200);
       document.getElementById('fDelay').value = rule.mockResponse?.delayMs || 0;
       document.getElementById('fBody').value = tryStringify(rule.mockResponse?.body);
       document.getElementById('fHeaders').value = JSON.stringify(rule.mockResponse?.headers || {});
@@ -1360,7 +1413,7 @@
           command: 'modifyResponse',
           data: {
             requestId: modifyRequestId,
-            statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+            statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
             headers: tryParse(document.getElementById('fHeaders').value) || {},
             body: tryParse(document.getElementById('fBody').value),
           },
@@ -1379,7 +1432,7 @@
         enabled: true,
         action: document.getElementById('fAction').value,
         mockResponse: {
-          statusCode: parseInt(document.getElementById('fStatusCode').value) || 200,
+          statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
           headers: tryParse(document.getElementById('fHeaders').value) || {"content-type":"application/json"},
           body: tryParse(document.getElementById('fBody').value),
           delayMs: parseInt(document.getElementById('fDelay').value) || 0,
@@ -1457,7 +1510,7 @@
       document.getElementById('fUrlPattern').value = entry.url;
       document.getElementById('fMethod').value = entry.method;
       document.getElementById('fAction').value = 'mockBeforeRequest';
-      document.getElementById('fStatusCode').value = entry.statusCode || 200;
+      setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
       document.getElementById('fBody').value = tryStringify(entry.responseBody);
       document.getElementById('fHeaders').value = JSON.stringify(

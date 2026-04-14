@@ -49,12 +49,8 @@ class NetInspectorInterceptor extends Interceptor {
     int port = 9555,
     this.breakpointTimeout = const Duration(seconds: 30),
     InspectorClient? client,
-  })  : _client = client ??
-            InspectorClient(
-              host: host,
-              port: port,
-            ),
-        _mockStore = MockRuleStore() {
+  }) : _client = client ?? InspectorClient(host: host, port: port),
+       _mockStore = MockRuleStore() {
     // Listen for commands from VSCode
     _client.messages.listen(_handleVSCodeMessage);
   }
@@ -91,8 +87,7 @@ class NetInspectorInterceptor extends Interceptor {
   // ---------------------------------------------------------------------------
 
   @override
-  void onRequest(
-      RequestOptions options, RequestInterceptorHandler handler) {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final requestId = _nextRequestId();
     // Tag the request so we can correlate it later
     options.extra['_inspector_id'] = requestId;
@@ -108,8 +103,9 @@ class NetInspectorInterceptor extends Interceptor {
       url: url,
       headers: options.headers.map((k, v) => MapEntry(k, v.toString())),
       body: options.data,
-      queryParameters:
-          options.queryParameters.map((k, v) => MapEntry(k, v.toString())),
+      queryParameters: options.queryParameters.map(
+        (k, v) => MapEntry(k, v.toString()),
+      ),
     );
     _client.sendRequest(captured.toMap());
 
@@ -184,8 +180,7 @@ class NetInspectorInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) async {
-    final requestId =
-        response.requestOptions.extra['_inspector_id'] as String?;
+    final requestId = response.requestOptions.extra['_inspector_id'] as String?;
     if (requestId == null) {
       handler.next(response);
       return;
@@ -226,14 +221,16 @@ class NetInspectorInterceptor extends Interceptor {
       _pendingBreakpoints[requestId] = completer;
 
       // Notify VSCode that this response is paused
-      _client.send(InspectorMessage(
-        type: MessageType.response_captured,
-        id: requestId,
-        payload: {
-          ...captured.toMap(),
-          'breakpoint': true, // tells VSCode UI to highlight this
-        },
-      ));
+      _client.send(
+        InspectorMessage(
+          type: MessageType.response_captured,
+          id: requestId,
+          payload: {
+            ...captured.toMap(),
+            'breakpoint': true, // tells VSCode UI to highlight this
+          },
+        ),
+      );
 
       try {
         // Wait for VSCode to send back modified response or resume
@@ -243,14 +240,16 @@ class NetInspectorInterceptor extends Interceptor {
         if (modified != null) {
           // VSCode sent back a modified response
           _log('MODIFIED: $method $url → ${modified.statusCode}');
-          handler.resolve(Response(
-            requestOptions: response.requestOptions,
-            statusCode: modified.statusCode,
-            headers: Headers.fromMap(
-              modified.headers.map((k, v) => MapEntry(k, [v.toString()])),
+          handler.resolve(
+            Response(
+              requestOptions: response.requestOptions,
+              statusCode: modified.statusCode,
+              headers: Headers.fromMap(
+                modified.headers.map((k, v) => MapEntry(k, [v.toString()])),
+              ),
+              data: _parseResponseBody(modified.body),
             ),
-            data: _parseResponseBody(modified.body),
-          ));
+          );
           return;
         }
       } on TimeoutException {
@@ -363,10 +362,7 @@ class NetInspectorInterceptor extends Interceptor {
       await _dio!.request(
         url,
         data: body,
-        options: Options(
-          method: method,
-          headers: headers,
-        ),
+        options: Options(method: method, headers: headers),
       );
     } catch (e) {
       _log('REPLAY error: $e');
@@ -408,16 +404,30 @@ class NetInspectorInterceptor extends Interceptor {
 
   static String _httpStatusMessage(int code) {
     const phrases = {
-      100: 'Continue', 101: 'Switching Protocols',
-      200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content',
-      301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
-      400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
-      404: 'Not Found', 405: 'Method Not Allowed', 409: 'Conflict',
-      410: 'Gone', 422: 'Unprocessable Entity', 429: 'Too Many Requests',
-      500: 'Internal Server Error', 502: 'Bad Gateway',
-      503: 'Service Unavailable', 504: 'Gateway Timeout',
+      100: 'Continue',
+      101: 'Switching Protocols',
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      204: 'No Content',
+      301: 'Moved Permanently',
+      302: 'Found',
+      304: 'Not Modified',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      403: 'Forbidden',
+      404: 'Not Found',
+      405: 'Method Not Allowed',
+      409: 'Conflict',
+      410: 'Gone',
+      422: 'Unprocessable Entity',
+      429: 'Too Many Requests',
+      500: 'Internal Server Error',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable',
+      504: 'Gateway Timeout',
     };
-    return phrases[code] ?? 'Unknown';
+    return phrases[code] ?? '';
   }
 
   void _log(String msg) {
