@@ -12,7 +12,7 @@ final class NetworkHelper {
   Future<void> init() async {
     inspector = NetInspectorInterceptor(
       host: '127.0.0.1',
-      port: 9556,
+      port: 9555,
     );
 
     /// connect to VSCode extension

@@ -58,7 +58,7 @@
       height: 100vh;
     }
     .app.detail-open {
-      grid-template-columns: 1fr 420px;
+      grid-template-columns: 1fr var(--detail-w, 420px);
     }
     .app.detail-open .toolbar { grid-column: 1 / -1; }
     .app.detail-open .tab-bar { grid-column: 1 / 2; }
@@ -261,7 +261,17 @@
       color: var(--list-active-fg);
     }
     .req-row.has-error { border-left: 3px solid var(--error); padding-left: 7px; }
-    .req-row.is-mocked { border-left: 3px solid var(--mocked); padding-left: 7px; }
+    .req-row.is-mocked {
+      border-left: 3px solid var(--mocked);
+      padding-left: 7px;
+      background: color-mix(in srgb, var(--mocked) 8%, transparent);
+    }
+    .req-row.is-mocked:hover {
+      background: color-mix(in srgb, var(--mocked) 15%, var(--list-hover));
+    }
+    .req-row.is-mocked.selected {
+      background: color-mix(in srgb, var(--mocked) 20%, var(--list-active));
+    }
     .req-row.is-breakpoint {
       border-left: 3px solid var(--warn);
       padding-left: 7px;
@@ -377,8 +387,24 @@
       border-left: 1px solid var(--border);
       background: var(--bg);
       overflow: hidden;
+      position: relative;
     }
     .detail-panel.open { display: flex; }
+
+    .detail-resize-handle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 5px;
+      cursor: col-resize;
+      z-index: 10;
+    }
+    .detail-resize-handle:hover,
+    .detail-resize-handle.dragging {
+      background: var(--accent);
+      opacity: 0.5;
+    }
 
     .detail-header {
       display: flex;
@@ -770,16 +796,10 @@
 
     <!-- Detail panel -->
     <div class="detail-panel" id="detailPanel">
+      <div class="detail-resize-handle" id="detailResizeHandle"></div>
       <div class="detail-header" id="detailHeader">
         <span class="detail-header-title" id="detailTitle">—</span>
         <div style="display:flex;gap:4px;flex-shrink:0;">
-          <button class="btn btn-sm" id="btnMockThis" data-action="mock-this"
-            style="border-color:var(--mocked);color:var(--mocked)">
-            ✦ Mock this
-          </button>
-          <button class="btn btn-sm" id="btnReplay" data-action="replay">
-            ↻ Replay
-          </button>
           <button class="btn btn-sm" id="btnResume" data-action="resume"
             style="display:none;border-color:var(--warn);color:var(--warn)">
             ▶ Resume
@@ -800,8 +820,9 @@
 
   <!-- Row context menu -->
   <div id="rowContextMenu" class="row-context-menu">
-    <button data-ctx="mock-this">✦ Mock this</button>
+    <button data-ctx="mock-action">✦ Mock this</button>
     <button data-ctx="replay">↻ Replay</button>
+    <button data-ctx="copy-curl">⎘ Copy as cURL</button>
   </div>
 
   <!-- Mock editor overlay -->
@@ -1160,11 +1181,6 @@
       // Breakpoint resume
       const isBreakpoint = entry.breakpoint;
       document.getElementById('btnResume').style.display = isBreakpoint ? '' : 'none';
-
-      // Always show replay and mock-this for completed requests
-      const hasResponse = entry.statusCode != null || entry.error;
-      document.getElementById('btnReplay').style.display = hasResponse ? '' : 'none';
-      document.getElementById('btnMockThis').style.display = hasResponse ? '' : 'none';
 
       // Mock status bar — show toggle if a rule exists for this endpoint
       renderMockStatusBar(entry);
@@ -1766,9 +1782,7 @@
       var btn = e.target.closest('[data-action]');
       if (!btn) return;
       var action = btn.dataset.action;
-      if (action === 'replay') replayRequest();
       if (action === 'resume') resumeBreakpoint();
-      if (action === 'mock-this') mockThisEndpoint();
       if (action === 'close-detail') closeDetail();
     });
 
@@ -1814,11 +1828,21 @@
       const menu = document.getElementById('rowContextMenu');
       const entry = entries.find(e => e.id === entryId);
       const hasResponse = entry && (entry.statusCode != null || entry.error);
+      const isMocked = entry && !!findRuleForEntry(entry);
+
       menu.querySelector('[data-ctx="replay"]').style.display = hasResponse ? '' : 'none';
+
+      const mockActionBtn = menu.querySelector('[data-ctx="mock-action"]');
+      if (isMocked) {
+        mockActionBtn.textContent = '✎ Edit mock';
+      } else {
+        mockActionBtn.textContent = '✦ Mock this';
+      }
+
       const rect = btn.getBoundingClientRect();
-      const menuH = menu.offsetHeight || 72;
+      const menuH = menu.offsetHeight || 96;
       const top = rect.bottom + menuH > window.innerHeight ? rect.top - menuH - 2 : rect.bottom + 2;
-      const left = Math.max(4, rect.right - 144);
+      const left = Math.max(4, rect.right - 160);
       menu.style.top = top + 'px';
       menu.style.left = left + 'px';
       menu.classList.add('open');
@@ -1829,13 +1853,32 @@
       rowMenuEntryId = null;
     }
 
+    function copyCurl(id) {
+      const entry = entries.find(e => e.id === id);
+      if (!entry) return;
+      let curl = "curl -X " + entry.method + " '" + entry.url + "'";
+      if (entry.requestHeaders) {
+        for (const [k, v] of Object.entries(entry.requestHeaders)) {
+          curl += " \\\n  -H '" + k + ': ' + String(v).replace(/'/g, "'\\''") + "'";
+        }
+      }
+      if (entry.requestBody != null) {
+        const body = typeof entry.requestBody === 'string'
+          ? entry.requestBody
+          : JSON.stringify(entry.requestBody);
+        curl += " \\\n  -d '" + body.replace(/'/g, "'\\''") + "'";
+      }
+      navigator.clipboard.writeText(curl).catch(() => {});
+    }
+
     document.getElementById('rowContextMenu').addEventListener('click', function(e) {
       var btn = e.target.closest('[data-ctx]');
       if (!btn || !rowMenuEntryId) return;
       var id = rowMenuEntryId;
       hideRowMenu();
-      if (btn.dataset.ctx === 'mock-this') mockThisEndpoint(id);
+      if (btn.dataset.ctx === 'mock-action') mockThisEndpoint(id);
       if (btn.dataset.ctx === 'replay') replayRequest(id);
+      if (btn.dataset.ctx === 'copy-curl') copyCurl(id);
     });
 
     document.addEventListener('click', function(e) {
@@ -1844,6 +1887,41 @@
         hideRowMenu();
       }
     });
+
+    // ---- Detail panel resize ----
+    (function() {
+      const handle = document.getElementById('detailResizeHandle');
+      const app = document.getElementById('app');
+      let dragging = false;
+      let startX = 0;
+      let startW = 420;
+
+      handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        dragging = true;
+        startX = e.clientX;
+        const current = getComputedStyle(app).getPropertyValue('--detail-w');
+        startW = parseInt(current) || 420;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        const delta = startX - e.clientX; // dragging left edge: move left = wider
+        const newW = Math.max(280, Math.min(window.innerWidth - 300, startW + delta));
+        app.style.setProperty('--detail-w', newW + 'px');
+      });
+
+      document.addEventListener('mouseup', function() {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      });
+    })();
 
     // Init
     vscode.postMessage({ command: 'getEntries' });
