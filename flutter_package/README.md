@@ -164,19 +164,19 @@ if (kDebugMode) {
 
 Click the three-dots icon on any captured request to mock it, replay it, or copy it as a cURL command.
 
-![Captured traffic with context menu](images/showcase_1.png)
+![Captured traffic with context menu](https://raw.githubusercontent.com/herisulistiyanto/flutter_net_inspector/main/flutter_package/images/showcase_1.png)
 
 **Step 2 — Configure the mock response**
 
 The mock editor opens pre-filled with the request's URL, method, status code, and response body. Change only what you need.
 
-![Mock editor pre-filled from request](images/showcase_2.png)
+![Mock editor pre-filled from request](https://raw.githubusercontent.com/herisulistiyanto/flutter_net_inspector/main/flutter_package/images/showcase_2.png)
 
 **Step 3 — Mock active**
 
 The request is now intercepted. The row is highlighted, the detail panel shows the mocked response body, and your Flutter app receives the mock data.
 
-![Mock active in dashboard and app](images/showcase_3.png)
+![Mock active in dashboard and app](https://raw.githubusercontent.com/herisulistiyanto/flutter_net_inspector/main/flutter_package/images/showcase_3.png)
 
 ---
 
