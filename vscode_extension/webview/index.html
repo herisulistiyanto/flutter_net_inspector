@@ -85,10 +85,11 @@
     }
     .status-dot {
       width: 7px; height: 7px; border-radius: 50%;
-      background: var(--error);
+      background: var(--fg-muted);
       flex-shrink: 0;
     }
     .status-dot.on { background: var(--success); }
+    .status-dot.waiting { background: var(--warn); }
 
     .search-box {
       flex: 1;
@@ -196,7 +197,7 @@
 
     .list-header {
       display: grid;
-      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px;
+      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px 28px;
       padding: 4px 10px;
       font-size: 10px;
       text-transform: uppercase;
@@ -246,7 +247,7 @@
 
     .req-row {
       display: grid;
-      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px;
+      grid-template-columns: 50px 56px var(--url-col-w, 1fr) 64px 56px 28px;
       padding: 5px 10px;
       border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
       cursor: pointer;
@@ -267,6 +268,50 @@
       animation: bp-pulse 2s ease-in-out infinite;
     }
     @keyframes bp-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+    .row-menu-btn {
+      background: none;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      font-size: 15px;
+      padding: 0 4px;
+      border-radius: 3px;
+      opacity: 0;
+      line-height: 1;
+      align-self: center;
+      justify-self: center;
+      transition: opacity 0.1s;
+    }
+    .req-row:hover .row-menu-btn,
+    .req-row.selected .row-menu-btn { opacity: 1; }
+    .row-menu-btn:hover { color: var(--fg); background: rgba(128,128,128,0.15); }
+
+    .row-context-menu {
+      position: fixed;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      z-index: 1000;
+      min-width: 140px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      overflow: hidden;
+      display: none;
+    }
+    .row-context-menu.open { display: block; }
+    .row-context-menu button {
+      display: block;
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--fg);
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .row-context-menu button:hover { background: var(--list-hover); }
 
     .method {
       font-weight: 600;
@@ -665,6 +710,9 @@
       color: transparent !important;
       caret-color: var(--input-fg);
     }
+    .json-editor-textarea.json-invalid {
+      border-color: var(--error) !important;
+    }
   </style>
 </head>
 <body>
@@ -673,7 +721,7 @@
     <div class="toolbar" id="toolbar">
       <div class="status-indicator">
         <div class="status-dot" id="statusDot"></div>
-        <span id="statusText">Waiting...</span>
+        <span id="statusText">Server stopped</span>
       </div>
 
       <div class="toolbar-sep"></div>
@@ -748,6 +796,12 @@
       </div>
       <div class="detail-body" id="detailBody"></div>
     </div>
+  </div>
+
+  <!-- Row context menu -->
+  <div id="rowContextMenu" class="row-context-menu">
+    <button data-ctx="mock-this">✦ Mock this</button>
+    <button data-ctx="replay">↻ Replay</button>
   </div>
 
   <!-- Mock editor overlay -->
@@ -842,6 +896,7 @@
             <textarea class="form-textarea json-editor-textarea" id="fBody"
               placeholder='{"message": "Hello from mock"}' spellcheck="false"></textarea>
           </div>
+          <div id="fBodyError" style="display:none;font-size:11px;color:var(--error);margin-top:3px"></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -855,6 +910,7 @@
     const vscode = acquireVsCodeApi();
 
     // ---- State ----
+    let serverRunning = false;
     let entries = [];
     let mockRules = [];
     let selectedId = null;
@@ -867,6 +923,7 @@
     let isResizing = false;
     let resizeStartX = 0;
     let resizeStartWidth = 0;
+    let rowMenuEntryId = null;
 
     // ---- VSCode messages ----
     window.addEventListener('message', (event) => {
@@ -874,6 +931,7 @@
       switch (type) {
         case 'initial_data':
           entries = payload.entries || [];
+          serverRunning = payload.serverRunning !== false;
           updateStatus(payload.connectedClients > 0);
           render();
           break;
@@ -916,6 +974,15 @@
           break;
         case 'app_connected': updateStatus(true); break;
         case 'app_disconnected': updateStatus(false); break;
+        case 'server_status':
+          serverRunning = payload.serverRunning;
+          updateStatus(payload.serverRunning && payload.connectedClients > 0);
+          if (!payload.serverRunning && mockRules.some(r => r.enabled !== false)) {
+            mockRules = mockRules.map(r => ({ ...r, enabled: false }));
+            vscode.postMessage({ command: 'persistRules', data: { rules: mockRules } });
+            render();
+          }
+          break;
       }
     });
 
@@ -969,7 +1036,7 @@
         + '<span>Method</span><span>Status</span>'
         + '<span class="url-header-cell"><span>URL</span><div class="col-resize-handle" id="colResizeHandle"></div></span>'
         + '<span class="time-header" id="timeHeader">Time' + arrow + '</span>'
-        + '<span>Duration</span></div>';
+        + '<span>Duration</span><span></span></div>';
 
       for (const e of filtered) {
         const cls = [
@@ -993,6 +1060,7 @@
           + '<span class="url-cell"><span class="url-path">' + esc(path) + '</span>' + pills + '</span>'
           + '<span class="time">' + fmtTime(e.requestTimestamp) + '</span>'
           + '<span class="duration">' + (e.durationMs != null ? e.durationMs + 'ms' : '') + '</span>'
+          + '<button class="row-menu-btn" data-row-menu="' + e.id + '" title="More actions">⋮</button>'
           + '</div>';
       }
       container.innerHTML = html;
@@ -1341,6 +1409,27 @@
       hl.innerHTML = syntaxHLRaw(ta.value || ta.placeholder || '');
     }
 
+    function validateMockBody() {
+      const ta = document.getElementById('fBody');
+      const errEl = document.getElementById('fBodyError');
+      if (!ta || !errEl) return;
+      const val = ta.value.trim();
+      if (!val) {
+        ta.classList.remove('json-invalid');
+        errEl.style.display = 'none';
+        return;
+      }
+      try {
+        JSON.parse(val);
+        ta.classList.remove('json-invalid');
+        errEl.style.display = 'none';
+      } catch (e) {
+        ta.classList.add('json-invalid');
+        errEl.textContent = 'Invalid JSON: ' + e.message;
+        errEl.style.display = 'block';
+      }
+    }
+
     function syncMockBodyScroll() {
       const ta = document.getElementById('fBody');
       const hl = document.getElementById('fBodyHighlight');
@@ -1364,6 +1453,7 @@
       document.getElementById('fHeaders').value = '{"content-type":"application/json"}';
       document.getElementById('mockOverlay').classList.add('open');
       updateMockBodyHighlight();
+      validateMockBody();
     }
 
     function openModifyFromDetail() {
@@ -1382,6 +1472,7 @@
       document.getElementById('fHeaders').value = JSON.stringify(entry.responseHeaders || {"content-type":"application/json"});
       document.getElementById('mockOverlay').classList.add('open');
       updateMockBodyHighlight();
+      validateMockBody();
     }
 
     function editMockRule(ruleId) {
@@ -1400,12 +1491,18 @@
       document.getElementById('fHeaders').value = JSON.stringify(rule.mockResponse?.headers || {});
       document.getElementById('mockOverlay').classList.add('open');
       updateMockBodyHighlight();
+      validateMockBody();
     }
 
     function closeMockEditor() {
       document.getElementById('mockOverlay').classList.remove('open');
       editingRuleId = null;
       modifyRequestId = null;
+      // clear any lingering validation state
+      const ta = document.getElementById('fBody');
+      const errEl = document.getElementById('fBodyError');
+      if (ta) ta.classList.remove('json-invalid');
+      if (errEl) errEl.style.display = 'none';
     }
 
     function saveMockRule() {
@@ -1449,6 +1546,7 @@
         vscode.postMessage({ command: 'addMockRule', data: rule });
       }
 
+      vscode.postMessage({ command: 'persistRules', data: { rules: mockRules } });
       closeMockEditor();
       render();
     }
@@ -1456,6 +1554,7 @@
     function deleteMockRule(ruleId) {
       mockRules = mockRules.filter(r => r.id !== ruleId);
       vscode.postMessage({ command: 'removeMockRule', data: { ruleId } });
+      vscode.postMessage({ command: 'persistRules', data: { rules: mockRules } });
       render();
     }
 
@@ -1469,9 +1568,10 @@
       renderDetail(entry);
     }
 
-    function replayRequest() {
-      if (!selectedId) return;
-      const entry = entries.find(e => e.id === selectedId);
+    function replayRequest(id) {
+      const targetId = id != null ? id : selectedId;
+      if (!targetId) return;
+      const entry = entries.find(e => e.id === targetId);
       if (!entry) return;
       vscode.postMessage({
         command: 'replayRequest',
@@ -1492,8 +1592,8 @@
       vscode.postMessage({ command: 'clearTraffic' });
     }
 
-    function mockThisEndpoint() {
-      const entry = entries.find(e => e.id === selectedId);
+    function mockThisEndpoint(id) {
+      const entry = entries.find(e => e.id === (id != null ? id : selectedId));
       if (!entry) return;
 
       // Check if a rule already exists — if so, open it for editing
@@ -1519,6 +1619,7 @@
       );
       document.getElementById('mockOverlay').classList.add('open');
       updateMockBodyHighlight();
+      validateMockBody();
     }
 
     function toggleMockRule(ruleId, enabled) {
@@ -1535,6 +1636,7 @@
         vscode.postMessage({ command: 'removeMockRule', data: { ruleId: ruleId } });
       }
 
+      vscode.postMessage({ command: 'persistRules', data: { rules: mockRules } });
       render();
 
       // Re-render mock status bar if detail panel is open
@@ -1560,8 +1662,16 @@
     function updateStatus(connected) {
       const dot = document.getElementById('statusDot');
       const txt = document.getElementById('statusText');
-      dot.classList.toggle('on', connected);
-      txt.textContent = connected ? 'Connected' : 'Waiting...';
+      if (!serverRunning) {
+        dot.className = 'status-dot';
+        txt.textContent = 'Server stopped';
+      } else if (connected) {
+        dot.className = 'status-dot on';
+        txt.textContent = 'Connected';
+      } else {
+        dot.className = 'status-dot waiting';
+        txt.textContent = 'Waiting...';
+      }
     }
 
     // ---- Helpers ----
@@ -1634,6 +1744,13 @@
         return toggleMockRule(toggle.dataset.toggleRule, toggle.checked);
       }
 
+      // Three-dot row menu button
+      var menuBtn = e.target.closest('[data-row-menu]');
+      if (menuBtn) {
+        e.stopPropagation();
+        return showRowMenu(menuBtn.dataset.rowMenu, menuBtn);
+      }
+
       var row = e.target.closest('[data-id]');
       if (row) return selectEntry(row.dataset.id);
 
@@ -1683,10 +1800,50 @@
       if (action === 'close-modal') closeMockEditor();
     });
 
-    // Mock editor JSON body highlighting
-    document.getElementById('fBody').addEventListener('input', updateMockBodyHighlight);
+    // Mock editor JSON body highlighting + validation
+    document.getElementById('fBody').addEventListener('input', () => {
+      updateMockBodyHighlight();
+      validateMockBody();
+    });
     document.getElementById('fBody').addEventListener('scroll', syncMockBodyScroll);
     document.getElementById('btnFormatBody').addEventListener('click', prettyFormatBody);
+
+    // ---- Row context menu ----
+    function showRowMenu(entryId, btn) {
+      rowMenuEntryId = entryId;
+      const menu = document.getElementById('rowContextMenu');
+      const entry = entries.find(e => e.id === entryId);
+      const hasResponse = entry && (entry.statusCode != null || entry.error);
+      menu.querySelector('[data-ctx="replay"]').style.display = hasResponse ? '' : 'none';
+      const rect = btn.getBoundingClientRect();
+      const menuH = menu.offsetHeight || 72;
+      const top = rect.bottom + menuH > window.innerHeight ? rect.top - menuH - 2 : rect.bottom + 2;
+      const left = Math.max(4, rect.right - 144);
+      menu.style.top = top + 'px';
+      menu.style.left = left + 'px';
+      menu.classList.add('open');
+    }
+
+    function hideRowMenu() {
+      document.getElementById('rowContextMenu').classList.remove('open');
+      rowMenuEntryId = null;
+    }
+
+    document.getElementById('rowContextMenu').addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-ctx]');
+      if (!btn || !rowMenuEntryId) return;
+      var id = rowMenuEntryId;
+      hideRowMenu();
+      if (btn.dataset.ctx === 'mock-this') mockThisEndpoint(id);
+      if (btn.dataset.ctx === 'replay') replayRequest(id);
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!document.getElementById('rowContextMenu').classList.contains('open')) return;
+      if (!e.target.closest('#rowContextMenu') && !e.target.closest('[data-row-menu]')) {
+        hideRowMenu();
+      }
+    });
 
     // Init
     vscode.postMessage({ command: 'getEntries' });

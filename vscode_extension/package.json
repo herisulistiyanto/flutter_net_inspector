@@ -32,24 +32,33 @@
     "commands": [
       {
         "command": "flutterNetInspector.open",
-        "title": "Flutter Net Inspector: Open Dashboard"
+        "title": "Flutter Net Inspector: Open Dashboard",
+        "icon": "$(layout-panel)"
       },
       {
         "command": "flutterNetInspector.startServer",
-        "title": "Flutter Net Inspector: Start Server"
+        "title": "Flutter Net Inspector: Start Server",
+        "icon": "$(debug-start)"
       },
       {
         "command": "flutterNetInspector.stopServer",
-        "title": "Flutter Net Inspector: Stop Server"
+        "title": "Flutter Net Inspector: Stop Server",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "flutterNetInspector.clearTraffic",
-        "title": "Flutter Net Inspector: Clear Traffic"
+        "title": "Flutter Net Inspector: Clear Traffic",
+        "icon": "$(clear-all)"
       }
     ],
     "configuration": {
       "title": "Flutter Net Inspector",
       "properties": {
+        "flutterNetInspector.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "WebSocket server host address"
+        },
         "flutterNetInspector.port": {
           "type": "number",
           "default": 9555,
@@ -57,7 +66,7 @@
         },
         "flutterNetInspector.autoStart": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Auto-start the WebSocket server when the extension activates"
         },
         "flutterNetInspector.maxEntries": {
@@ -73,6 +82,17 @@
           "id": "flutterNetInspector",
           "title": "Net Inspector",
           "icon": "$(globe)"
+        }
+      ]
+    },
+    "views": {
+      "flutterNetInspector": [
+        {
+          "id": "flutterNetInspectorView",
+          "type": "webview",
+          "name": "Net Inspector",
+          "icon": "$(globe)",
+          "contextualTitle": "Flutter Net Inspector"
         }
       ]
     }
