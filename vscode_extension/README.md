@@ -1,151 +1,104 @@
-# Flutter Net Inspector — VSCode Extension
+# Flutter Net Inspector
 
-A VSCode extension that provides a network inspector dashboard for Flutter apps. It runs a WebSocket server that receives HTTP traffic from the companion Dart package's Dio interceptor and displays it in a WebView panel with real-time mock and modify capabilities.
+A VSCode extension that gives you a real-time network inspector dashboard for your Flutter app — inspect live HTTP traffic, mock any endpoint, set breakpoints on responses, and replay requests, all without leaving VSCode.
 
----
-
-## Architecture
-
-```
-VSCode Extension
-├── extension.ts     # Activation, command registration, lifecycle
-├── server.ts        # WebSocket server (ws library, port 9555)
-│   ├── Accepts connections from Flutter apps
-│   ├── Stores NetworkEntry objects in memory (configurable max)
-│   ├── Broadcasts mock rules and response modifications to connected apps
-│   └── Status bar item showing connection count
-├── panel.ts         # WebView panel manager
-│   ├── Loads webview/index.html into a VSCode WebView
-│   ├── Bridges messages between WebView ↔ Server
-│   ├── Persists mock rules to .vscode/net-inspector-rules.json
-│   └── HAR file export
-└── webview/
-    └── index.html   # Dashboard UI (vanilla HTML/CSS/JS, no build step)
-```
+Think of it as **Flipper/Stetho for Flutter**, built into your editor.
 
 ---
 
-## Message Flow
+## Requirements
 
-```
-Flutter App                  VSCode Extension                  WebView Panel
-    │                               │                                │
-    │── request_captured ──────────►│                                │
-    │                               │── postMessage ────────────────►│ renders row
-    │── response_captured ─────────►│                                │
-    │                               │── postMessage ────────────────►│ updates row
-    │                               │                                │
-    │                               │◄── { command: 'addMockRule' } ─│ user clicks "+ Mock"
-    │◄── mock_rule_add ─────────────│                                │
-    │                               │                                │
-    │                               │◄── { command: 'modifyResponse'}│ user edits breakpointed response
-    │◄── modify_response ───────────│                                │
-```
+- The companion Dart package [`flutter_net_inspector`](https://pub.dev/packages/flutter_net_inspector) must be added to your Flutter app.
+- VSCode 1.85 or later.
 
 ---
 
-## Dashboard UI
+## Getting started
 
-### Toolbar
-- **Connection status** — green/red dot with connected app count
-- **Filter input** — search by URL, method, or status code
-- **+ Mock** — open the mock rule editor to add a new rule
+### 1. Install the Dart package
 
-### Tab bar
-- **All** — every captured request
-- **XHR** — (future use)
-- **Mocked** — requests that were served by a mock rule
-- **Errors** — requests that returned 4xx/5xx or threw a network error
-- **Mock Rules** — manage active rules
-- **⊘ Clear traffic** (far right) — clears all captured entries from the list
+```yaml
+# pubspec.yaml
+dependencies:
+  flutter_net_inspector: ^0.1.0
+```
 
-### Request list
-- Grid columns: Method · Status · URL · Time · Duration
-- **URL column** is resizable — drag the divider on the column header
-- **Time column** is sortable — click the header to toggle ascending/descending
-- Visual indicators:
-  - Left red border → error / 4xx–5xx
-  - Left purple border → mocked response
-  - Left yellow border + pulse animation → breakpoint (paused)
-  - "MOCK" / "PAUSED" pills inside the row
+Wire up the interceptor and call `connect()` in debug mode. Full setup guide: [pub.dev/packages/flutter_net_inspector](https://pub.dev/packages/flutter_net_inspector).
 
-### Detail panel
-Slides in from the right when a row is selected.
+### 2. Open the dashboard
 
-**Tabs:**
-- **Overview** — URL, method, status code, duration, timestamp, query parameters, error details
-- **Request** — request body with JSON syntax highlighting
-- **Response** — response body with JSON syntax highlighting
-- **Headers** — request and response header tables
+Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run:
 
-**Action buttons:**
-- **↻ Replay** — re-send the captured request through the Flutter app
-- **✦ Mock this** — open mock editor pre-filled with this request's URL, method, status code, and response body
-- **▶ Resume** — (breakpoint only) let the original response through unchanged
+```
+Flutter Net Inspector: Open Dashboard
+```
 
-### Mock rule editor (modal)
-Opened via **+ Mock** or **✦ Mock this**.
+The WebSocket server starts automatically and the dashboard opens in a panel. Run your Flutter app — traffic appears in real time.
 
-| Field | Description |
+---
+
+## Features
+
+### Live traffic capture
+Every HTTP request and response is captured as it happens — method, status code, URL, headers, body, and timing. Filter by URL, method, or status code. Sort by time. Click any row to inspect full details.
+
+### Mock responses
+Intercept any endpoint and return a custom response — status code, headers, body, and optional simulated latency — without touching your server or app code. Mocked entries are highlighted in the list so you always know what's real.
+
+Right-click any captured request and choose **Mock this** to open the mock editor pre-filled with that request's data.
+
+### Breakpoints
+Pause a response mid-flight, inspect and edit its body or status code in the VSCode panel, then resume it. Useful for testing how your app handles edge-case server responses without needing a real server that returns them.
+
+### Request replay
+Re-fire any previously captured request from the dashboard with one click.
+
+### Mock rule persistence
+Mock rules are saved to `.vscode/net-inspector-rules.json` in your workspace. Commit this file to share mock setups with your team. Rules are restored automatically the next time the extension activates.
+
+---
+
+## UI walkthrough
+
+**Inspect live traffic — right-click for actions**
+
+Every request appears as it happens. Open the context menu to mock the endpoint, replay the request, or copy it as a cURL command. Click the row to open the detail panel with full headers, body, and timing.
+
+![Live traffic and context menu](images/showcase_1.png)
+
+**Configure a mock response**
+
+The mock editor opens pre-filled from the selected request. Adjust the status code, headers, response body, or add a simulated delay — then save. The rule takes effect on the next matching request immediately.
+
+![Mock editor](images/showcase_2.png)
+
+**See the mock in action**
+
+The intercepted row is highlighted with a purple indicator. The detail panel shows the mocked response body, and your Flutter app receives exactly the data you configured.
+
+![Mock active](images/showcase_3.png)
+
+---
+
+## Dashboard overview
+
+| Area | What it does |
 |---|---|
-| URL | Exact URL to match, including query string |
-| Method | HTTP method filter or "Any method" |
-| Action | Mock (skip server) or Breakpoint (pause response) |
-| Status code | Dropdown of standard HTTP codes grouped by 1xx / 2xx / 3xx / 4xx / 5xx |
-| Delay (ms) | Simulated latency before the mock response is returned |
-| Response headers | JSON object (default: `{"content-type":"application/json"}`) |
-| Response body | JSON editor with live syntax highlighting and **{ } Format** button |
-
-**{ } Format** — pretty-prints the body JSON in place (no-op if not valid JSON).
-
-**"✦ Mock this"** pre-fills all fields from the selected request's captured data so you only change what you need (e.g., just flip the status code to 500).
-
-### Mock Rules panel
-Cards showing all active rules. Toggle rules on/off with the switch — disabling a rule removes it from the Flutter app's active set without deleting it from the list.
+| **Toolbar** | Connection status, URL/method/status filter, **+ Mock** button |
+| **All / Mocked / Errors / Mock Rules tabs** | Filter the list by category |
+| **Request row** | Click to open the detail panel; three-dot menu for Mock, Replay, Copy as cURL |
+| **Detail panel** | Overview, Request body, Response body, Headers — resizable by dragging the left edge |
+| **Mock Rules tab** | Toggle, edit, or delete saved mock rules |
 
 ---
 
-## Mock Rule Persistence
+## Extension settings
 
-Rules are saved to:
-```
-<workspace>/.vscode/net-inspector-rules.json
-```
-
-Commit this file to share mock setups with your team. On extension activation, persisted rules are loaded and pushed to any connected Flutter apps automatically.
-
-Example format:
-```json
-[
-  {
-    "id": "rule_1712900000000",
-    "urlPattern": "https://api.example.com/v1/users?page=1",
-    "method": "GET",
-    "enabled": true,
-    "action": "mockBeforeRequest",
-    "mockResponse": {
-      "statusCode": 200,
-      "headers": { "content-type": "application/json" },
-      "body": { "users": [], "meta": { "total": 0 } },
-      "delayMs": 0
-    }
-  }
-]
-```
-
-> Note: `urlPattern` is an **exact URL match**, including query string. Each unique URL + query combination needs its own rule.
-
----
-
-## Configuration
-
-Extension settings (VSCode Settings UI or `settings.json`):
-
-| Setting | Type | Default | Description |
-|---|---|---|---|
-| `flutterNetInspector.port` | number | `9555` | WebSocket server port |
-| `flutterNetInspector.autoStart` | boolean | `true` | Start server automatically on activation |
-| `flutterNetInspector.maxEntries` | number | `500` | Max entries kept in memory (FIFO eviction) |
+| Setting | Default | Description |
+|---|---|---|
+| `flutterNetInspector.port` | `9555` | WebSocket server port |
+| `flutterNetInspector.autoStart` | `true` | Start the server automatically on activation |
+| `flutterNetInspector.maxEntries` | `500` | Max requests kept in memory |
 
 ---
 
@@ -153,62 +106,19 @@ Extension settings (VSCode Settings UI or `settings.json`):
 
 | Command | Description |
 |---|---|
-| `Flutter Net Inspector: Open Dashboard` | Create or reveal the WebView panel (starts server if needed) |
+| `Flutter Net Inspector: Open Dashboard` | Open or reveal the dashboard panel |
 | `Flutter Net Inspector: Start Server` | Start the WebSocket server manually |
 | `Flutter Net Inspector: Stop Server` | Stop the server |
 | `Flutter Net Inspector: Clear Traffic` | Clear all captured entries |
 
 ---
 
-## Development
+## Real device setup
 
-### Prerequisites
-- Node.js 18+
-- VSCode 1.85+
+By default the Dart package connects to `127.0.0.1:9555`. For a physical device you need to point it at your machine's LAN IP, or use `adb reverse` for Android:
 
-### Setup
 ```bash
-cd vscode_extension
-npm install
-npm run compile      # single build
-npm run watch        # rebuild on file changes
+adb reverse tcp:9555 tcp:9555
 ```
 
-### Debug (F5)
-Open the `vscode_extension/` folder in VSCode, press **F5**. A new Extension Development Host window opens with the extension active.
-
-Open Command Palette → **Flutter Net Inspector: Open Dashboard**.
-
-Debug output appears in the original window's Debug Console. After a `npm run watch` recompile, press **Ctrl+Shift+F5** to restart the Extension Host.
-
-### Build `.vsix`
-```bash
-npm run build:vsix
-```
-
-Produces `flutter-net-inspector-x.x.x.vsix`. Install via:
-```bash
-code --install-extension flutter-net-inspector-*.vsix
-```
-
----
-
-## WebSocket Protocol
-
-The server listens on `ws://0.0.0.0:<port>/inspector` and accepts JSON messages in the `InspectorMessage` envelope format. See the companion Dart package README for the full protocol reference.
-
----
-
-## Dependencies
-
-Runtime:
-- `ws: ^8.16.0` — WebSocket server
-
-Dev:
-- `typescript`, `esbuild`, `@types/vscode`, `@types/ws`, `@types/node`, `prettier`
-
----
-
-## Companion Project
-
-Designed to work with the **Flutter Net Inspector Dart Package** (`../flutter_package/`). The Dart package provides the `NetInspectorInterceptor` Dio interceptor that connects to this extension's WebSocket server.
+See the [Dart package README](https://pub.dev/packages/flutter_net_inspector) for full host configuration options.
