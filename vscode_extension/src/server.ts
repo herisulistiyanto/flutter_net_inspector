@@ -29,17 +29,49 @@ type MessageHandler = (type: string, payload: Record<string, unknown>) => void;
 export class InspectorServer {
   private wss: WebSocketServer | null = null;
   private clients: Set<WebSocket> = new Set();
-  private port: number;
+  private _port: number;
+  private _host: string;
   private entries: Map<string, NetworkEntry> = new Map();
   private maxEntries: number;
   private onMessage: MessageHandler | null = null;
   private statusBarItem: vscode.StatusBarItem;
+  private _onStateChange = new vscode.EventEmitter<void>();
+  private _storedRules: unknown[] = [];
 
-  constructor(port: number = 9555, maxEntries: number = 500) {
-    this.port = port;
+  readonly onStateChange: vscode.Event<void> = this._onStateChange.event;
+
+  constructor(host: string = "127.0.0.1", port: number = 9555, maxEntries: number = 500) {
+    this._host = host;
+    this._port = port;
     this.maxEntries = maxEntries;
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.updateStatusBar(false);
+  }
+
+  get port(): number {
+    return this._port;
+  }
+
+  get host(): string {
+    return this._host;
+  }
+
+  /** Keep mock rules alive across panel close/reopen within the same session. */
+  storeRules(rules: unknown[]) {
+    this._storedRules = [...rules];
+  }
+
+  getStoredRules(): unknown[] {
+    return this._storedRules;
+  }
+
+  /**
+   * Update host/port config. Call before start() or after stop() to apply new values.
+   */
+  updateConfig(host: string, port: number) {
+    this._host = host;
+    this._port = port;
+    this.updateStatusBar(this.isRunning);
   }
 
   /**
@@ -61,11 +93,11 @@ export class InspectorServer {
       }
 
       try {
-        this.wss = new WebSocketServer({ port: this.port });
+        this.wss = new WebSocketServer({ host: this._host, port: this._port });
 
         this.wss.on("listening", () => {
           this.updateStatusBar(true);
-          vscode.window.showInformationMessage(`Net Inspector server running on port ${this.port}`);
+          vscode.window.showInformationMessage(`Net Inspector server running on ${this._host}:${this._port}`);
           resolve();
         });
 
@@ -96,11 +128,6 @@ export class InspectorServer {
         });
 
         this.wss.on("error", (err: Error) => {
-          if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
-            vscode.window.showErrorMessage(
-              `Port ${this.port} is already in use. Change it in settings.`
-            );
-          }
           reject(err);
         });
       } catch (e) {
@@ -118,6 +145,14 @@ export class InspectorServer {
         resolve();
         return;
       }
+      // Tell Flutter apps to clear all mocks before we drop the connection,
+      // so they fall back to real network behaviour immediately.
+      this.broadcast({
+        type: "mock_rule_clear",
+        id: `clear_${Date.now()}`,
+        payload: {},
+        timestamp: new Date().toISOString(),
+      });
       // Close all client connections
       for (const client of this.clients) {
         client.close();
@@ -239,7 +274,7 @@ export class InspectorServer {
     id: string;
     payload: Record<string, unknown>;
   }) {
-    const { type, id, payload } = message;
+    const { type, payload } = message;
 
     switch (type) {
       case "request_captured": {
@@ -309,7 +344,7 @@ export class InspectorServer {
     if (running) {
       const count = this.clients.size;
       this.statusBarItem.text = `$(globe) Inspector: ${count} app${count !== 1 ? "s" : ""}`;
-      this.statusBarItem.tooltip = `Net Inspector running on port ${this.port}`;
+      this.statusBarItem.tooltip = `Net Inspector running on ${this._host}:${this._port}`;
       this.statusBarItem.backgroundColor = undefined;
     } else {
       this.statusBarItem.text = "$(globe) Inspector: off";
@@ -317,10 +352,12 @@ export class InspectorServer {
     }
     this.statusBarItem.command = "flutterNetInspector.open";
     this.statusBarItem.show();
+    this._onStateChange.fire();
   }
 
   dispose() {
     this.stop();
     this.statusBarItem.dispose();
+    this._onStateChange.dispose();
   }
 }

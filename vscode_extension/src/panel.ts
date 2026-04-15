@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { InspectorServer, NetworkEntry } from "./server";
+import { InspectorServer } from "./server";
 
 const RULES_FILENAME = "net-inspector-rules.json";
 
@@ -36,8 +36,22 @@ export class InspectorPanel {
       this.panel.webview.postMessage({ type, payload });
     });
 
-    this.sendInitialData();
-    this.loadPersistedRules();
+    // Keep dashboard in sync when server starts/stops from the activity panel
+    this.disposables.push(
+      this.server.onStateChange(() => {
+        this.panel.webview.postMessage({
+          type: "server_status",
+          payload: {
+            serverRunning: this.server.isRunning,
+            connectedClients: this.server.connectedClients,
+          },
+        });
+      })
+    );
+
+    // Do NOT call sendInitialData/loadPersistedRules here —
+    // the webview JS isn't loaded yet and messages would be dropped.
+    // Both are triggered by the 'getEntries' message the webview sends on ready.
   }
 
   static createOrShow(extensionUri: vscode.Uri, server: InspectorServer) {
@@ -80,6 +94,23 @@ export class InspectorPanel {
   }
 
   private loadPersistedRules() {
+    // 1. Try in-memory store first (survives panel close/reopen in same session
+    //    and works regardless of whether a workspace folder is open).
+    const memRules = this.server.getStoredRules();
+    if (memRules.length > 0) {
+      this.panel.webview.postMessage({
+        type: "load_persisted_rules",
+        payload: { rules: memRules },
+      });
+      for (const rule of memRules) {
+        if ((rule as Record<string, unknown>)["enabled"] !== false) {
+          this.server.addMockRule(rule as Record<string, unknown>);
+        }
+      }
+      return;
+    }
+
+    // 2. Fall back to the .vscode file (cross-session restore when workspace exists).
     const rulesPath = this.getRulesFilePath();
     if (!rulesPath) {
       return;
@@ -89,6 +120,7 @@ export class InspectorPanel {
       if (fs.existsSync(rulesPath)) {
         const rules = JSON.parse(fs.readFileSync(rulesPath, "utf8"));
         if (Array.isArray(rules)) {
+          this.server.storeRules(rules); // populate memory for subsequent reopens
           this.panel.webview.postMessage({
             type: "load_persisted_rules",
             payload: { rules },
@@ -106,6 +138,10 @@ export class InspectorPanel {
   }
 
   private persistRules(rules: unknown[]) {
+    // Always update the in-memory store.
+    this.server.storeRules(rules);
+
+    // Also write to .vscode file when a workspace folder is available.
     const rulesPath = this.getRulesFilePath();
     if (!rulesPath) {
       return;
@@ -168,7 +204,9 @@ export class InspectorPanel {
         break;
 
       case "getEntries":
+        // Webview is ready — send both entries and persisted rules now
         this.sendInitialData();
+        this.loadPersistedRules();
         break;
 
       case "persistRules":

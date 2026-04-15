@@ -2,7 +2,7 @@
   "name": "flutter-net-inspector",
   "displayName": "Flutter Net Inspector",
   "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "kjokkenkoddinger",
   "license": "MIT",
   "engines": {
@@ -20,30 +20,45 @@
     "mock",
     "flipper"
   ],
-  "activationEvents": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/herisulistiyanto/flutter_net_inspector.git"
+  },
+  "homepage": "https://github.com/herisulistiyanto/flutter_net_inspector/#readme",
+  "icon": "logo.png",
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "flutterNetInspector.open",
-        "title": "Flutter Net Inspector: Open Dashboard"
+        "title": "Flutter Net Inspector: Open Dashboard",
+        "icon": "$(layout-panel)"
       },
       {
         "command": "flutterNetInspector.startServer",
-        "title": "Flutter Net Inspector: Start Server"
+        "title": "Flutter Net Inspector: Start Server",
+        "icon": "$(debug-start)"
       },
       {
         "command": "flutterNetInspector.stopServer",
-        "title": "Flutter Net Inspector: Stop Server"
+        "title": "Flutter Net Inspector: Stop Server",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "flutterNetInspector.clearTraffic",
-        "title": "Flutter Net Inspector: Clear Traffic"
+        "title": "Flutter Net Inspector: Clear Traffic",
+        "icon": "$(clear-all)"
       }
     ],
     "configuration": {
       "title": "Flutter Net Inspector",
       "properties": {
+        "flutterNetInspector.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "WebSocket server host address"
+        },
         "flutterNetInspector.port": {
           "type": "number",
           "default": 9555,
@@ -51,7 +66,7 @@
         },
         "flutterNetInspector.autoStart": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Auto-start the WebSocket server when the extension activates"
         },
         "flutterNetInspector.maxEntries": {
@@ -69,6 +84,17 @@
           "icon": "$(globe)"
         }
       ]
+    },
+    "views": {
+      "flutterNetInspector": [
+        {
+          "id": "flutterNetInspectorView",
+          "type": "webview",
+          "name": "Net Inspector",
+          "icon": "$(globe)",
+          "contextualTitle": "Flutter Net Inspector"
+        }
+      ]
     }
   },
   "scripts": {
@@ -80,7 +106,7 @@
     "clean": "node -e \"const fs=require('fs');const p=require('path');['out'].forEach(d=>{if(fs.existsSync(d))fs.rmSync(d,{recursive:true})});fs.readdirSync('.').filter(f=>f.endsWith('.vsix')).forEach(f=>fs.unlinkSync(f));console.log('Cleaned')\"",
     "typecheck": "tsc --noEmit",
     "prebuild:vsix": "npm run clean && npm run typecheck",
-    "build:vsix": "npm run package && npx vsce package --no-dependencies --allow-missing-repository",
+    "build:vsix": "npm run package && npx vsce package",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
