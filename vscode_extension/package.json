@@ -2,7 +2,7 @@
   "name": "flutter-net-inspector",
   "displayName": "Flutter Net Inspector",
   "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "kjokkenkoddinger",
   "license": "MIT",
   "engines": {
