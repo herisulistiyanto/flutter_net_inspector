@@ -58,6 +58,28 @@ Mock rules are saved to `.vscode/net-inspector-rules.json` in your workspace. Co
 
 ---
 
+## UI walkthrough
+
+**Inspect live traffic — right-click for actions**
+
+Every request appears as it happens. Open the context menu to mock the endpoint, replay the request, or copy it as a cURL command. Click the row to open the detail panel with full headers, body, and timing.
+
+![Live traffic and context menu](images/showcase_1.png)
+
+**Configure a mock response**
+
+The mock editor opens pre-filled from the selected request. Adjust the status code, headers, response body, or add a simulated delay — then save. The rule takes effect on the next matching request immediately.
+
+![Mock editor](images/showcase_2.png)
+
+**See the mock in action**
+
+The intercepted row is highlighted with a purple indicator. The detail panel shows the mocked response body, and your Flutter app receives exactly the data you configured.
+
+![Mock active](images/showcase_3.png)
+
+---
+
 ## Dashboard overview
 
 | Area | What it does |
