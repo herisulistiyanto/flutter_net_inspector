@@ -20,7 +20,13 @@
     "mock",
     "flipper"
   ],
-  "activationEvents": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/herisulistiyanto/flutter_net_inspector.git"
+  },
+  "homepage": "https://github.com/herisulistiyanto/flutter_net_inspector/#readme",
+  "icon": "logo.png",
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -80,7 +86,7 @@
     "clean": "node -e \"const fs=require('fs');const p=require('path');['out'].forEach(d=>{if(fs.existsSync(d))fs.rmSync(d,{recursive:true})});fs.readdirSync('.').filter(f=>f.endsWith('.vsix')).forEach(f=>fs.unlinkSync(f));console.log('Cleaned')\"",
     "typecheck": "tsc --noEmit",
     "prebuild:vsix": "npm run clean && npm run typecheck",
-    "build:vsix": "npm run package && npx vsce package --no-dependencies --allow-missing-repository",
+    "build:vsix": "npm run package && npx vsce package",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",

@@ -42,7 +42,7 @@ const extensionConfig = {
     platform: "node",
     target: "node18",
     outfile: "out/extension.js",
-    external: ["vscode"],
+    external: ["vscode", "ws"],
     logLevel: "info",
     legalComments: "none",
     drop: production ? ["debugger"] : [],

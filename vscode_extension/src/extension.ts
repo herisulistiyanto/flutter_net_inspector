@@ -57,6 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
   if (autoStart) {
     server.start().catch((e) => {
       console.error("[NetInspector] Auto-start failed:", e);
+      vscode.window.showErrorMessage(`Net Inspector failed to start: ${e?.message ?? e}`);
     });
   }
 
