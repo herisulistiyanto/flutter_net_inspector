@@ -21,6 +21,8 @@ class InspectorClient {
   bool _disposed = false;
   bool _connected = false;
 
+  static const _maxReconnectInterval = Duration(seconds: 30);
+
   final _messageController = StreamController<InspectorMessage>.broadcast();
   final List<OnConnectionChanged> _connectionListeners = [];
 
@@ -32,7 +34,7 @@ class InspectorClient {
     this.host = '127.0.0.1',
     this.port = 9555,
     this.reconnectInterval = const Duration(seconds: 3),
-    this.maxReconnectAttempts = 50,
+    this.maxReconnectAttempts = 10,
   });
 
   /// Register a connection state listener
@@ -76,14 +78,17 @@ class InspectorClient {
           _scheduleReconnect();
         },
       );
-    } on SocketException catch (e) {
-      _log('Cannot connect to inspector: ${e.message}');
+    } on SocketException {
+      // Server not running — reconnect silently with backoff
+      _scheduleReconnect();
+    } on HttpException {
+      // Server port occupied by a non-WebSocket process — backoff and retry
       _scheduleReconnect();
     } on TimeoutException {
-      _log('Connection timeout');
+      _log('Inspector connection timeout');
       _scheduleReconnect();
     } catch (e) {
-      _log('Connection error: $e');
+      _log('Inspector connection error: $e');
       _scheduleReconnect();
     }
   }
@@ -144,12 +149,20 @@ class InspectorClient {
   void _scheduleReconnect() {
     if (_disposed) return;
     if (_reconnectAttempts >= maxReconnectAttempts) {
-      _log('Max reconnect attempts reached');
+      _log('Inspector: max reconnect attempts reached, giving up');
       return;
     }
 
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(reconnectInterval, () {
+
+    // Exponential backoff: base * 2^attempts, capped at _maxReconnectInterval
+    final backoff = Duration(
+      milliseconds: (reconnectInterval.inMilliseconds *
+              (1 << _reconnectAttempts.clamp(0, 10)))
+          .clamp(0, _maxReconnectInterval.inMilliseconds),
+    );
+
+    _reconnectTimer = Timer(backoff, () {
       _reconnectAttempts++;
       connect();
     });
