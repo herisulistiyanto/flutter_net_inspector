@@ -2,10 +2,10 @@ name: flutter_net_inspector
 description: >
   Flipper/Stetho-like network inspector for Flutter. Dio interceptor
   with real-time mocking, breakpoints, and a VSCode extension dashboard.
-version: 0.0.1
+version: 0.1.0
 
 environment:
-  sdk: ">=3.11.0 <4.0.0"
+  sdk: ">=3.9.0 <4.0.0"
 
 dependencies:
   dio: ^5.9.1
