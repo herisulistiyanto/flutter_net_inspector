@@ -40,6 +40,11 @@ class NetInspectorInterceptor extends Interceptor {
   /// Reference to the Dio instance for request replay
   Dio? _dio;
 
+  /// Session prefix — changes on every hot-restart so IDs never collide
+  /// with entries from a previous run that are still displayed in the panel.
+  final String _sessionId =
+      DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+
   /// Auto-incrementing request ID
   int _requestCounter = 0;
 
@@ -93,10 +98,31 @@ class NetInspectorInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    // Fire async handler without awaiting — Dio gates on handler callbacks,
+    // not on the interceptor function returning.
+    unawaited(_doOnRequest(options, handler));
+  }
+
+  Future<void> _doOnRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
     final requestId = _nextRequestId();
     // Tag the request so we can correlate it later
     options.extra['_inspector_id'] = requestId;
     _requestTimings[requestId] = DateTime.now();
+
+    // Wait for the server to finish pushing active mock rules after a fresh
+    // (re)connect. Without this, the first requests after a hot-restart would
+    // bypass mocking because mock_rule_add messages haven't arrived yet.
+    // _client.isRulesSynced is a synchronous check — no overhead once synced.
+    // The timeout is only a safety net if the extension is slow or offline.
+    if (_client.isConnected && !_client.isRulesSynced) {
+      await _client.rulesReady.timeout(
+        const Duration(milliseconds: 500),
+        onTimeout: () {},
+      );
+    }
 
     final url = options.uri.toString();
     final method = options.method;
@@ -378,7 +404,7 @@ class NetInspectorInterceptor extends Interceptor {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  String _nextRequestId() => 'req_${++_requestCounter}';
+  String _nextRequestId() => '${_sessionId}_${++_requestCounter}';
 
   Map<String, dynamic> _flattenHeaders(Headers headers) {
     final map = <String, dynamic>{};

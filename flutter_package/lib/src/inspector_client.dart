@@ -23,6 +23,23 @@ class InspectorClient {
 
   static const _maxReconnectInterval = Duration(seconds: 30);
 
+  /// Completes when the server has finished pushing all active mock rules
+  /// after a (re)connect. Used to prevent the first requests from bypassing
+  /// mocking due to rules not yet being received.
+  Completer<void>? _rulesReadyCompleter;
+  bool _rulesSynced = false;
+
+  /// True once the server has confirmed all active rules have been delivered.
+  /// Synchronous — safe to check without awaiting.
+  bool get isRulesSynced => _rulesSynced;
+
+  /// Awaitable that resolves once mock rules are synced.
+  Future<void> get rulesReady {
+    final c = _rulesReadyCompleter;
+    if (c == null || c.isCompleted) return Future.value();
+    return c.future;
+  }
+
   final _messageController = StreamController<InspectorMessage>.broadcast();
   final List<OnConnectionChanged> _connectionListeners = [];
 
@@ -45,6 +62,9 @@ class InspectorClient {
   /// Connect to the VSCode extension WebSocket server
   Future<void> connect() async {
     if (_disposed) return;
+    // Fresh completer for each connection attempt so callers can await rulesReady.
+    _rulesSynced = false;
+    _rulesReadyCompleter = Completer<void>();
     try {
       _socket = await WebSocket.connect('ws://$host:$port/inspector')
           .timeout(const Duration(seconds: 5));
@@ -133,6 +153,14 @@ class InspectorClient {
   void _handleMessage(String raw) {
     try {
       final message = InspectorMessage.fromJson(raw);
+      if (message.type == MessageType.rules_synced) {
+        // Server finished pushing all active rules — unblock onRequest waiters.
+        _rulesSynced = true;
+        if (!(_rulesReadyCompleter?.isCompleted ?? true)) {
+          _rulesReadyCompleter!.complete();
+        }
+        return;
+      }
       _messageController.add(message);
     } catch (e) {
       _log('Failed to parse message: $e');
@@ -141,6 +169,14 @@ class InspectorClient {
 
   void _setConnected(bool value) {
     _connected = value;
+    if (!value) {
+      // Unblock any pending rulesReady waiters so requests aren't stuck
+      // if the connection drops before rules_synced arrives.
+      _rulesSynced = false;
+      if (!(_rulesReadyCompleter?.isCompleted ?? true)) {
+        _rulesReadyCompleter!.complete();
+      }
+    }
     for (final listener in _connectionListeners) {
       listener(value);
     }
