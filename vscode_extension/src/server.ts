@@ -109,7 +109,7 @@ export class InspectorServer {
           ws.on("message", (data: Buffer) => {
             try {
               const message = JSON.parse(data.toString());
-              this.handleFlutterMessage(message);
+              this.handleFlutterMessage(message, ws);
             } catch (e) {
               console.error("[NetInspector] Invalid message:", e);
             }
@@ -269,11 +269,16 @@ export class InspectorServer {
   // Internal
   // ---------------------------------------------------------------------------
 
-  private handleFlutterMessage(message: {
-    type: string;
-    id: string;
-    payload: Record<string, unknown>;
-  }) {
+  private sendTo(ws: WebSocket, message: Record<string, unknown>) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  private handleFlutterMessage(
+    message: { type: string; id: string; payload: Record<string, unknown> },
+    ws: WebSocket,
+  ) {
     const { type, payload } = message;
 
     switch (type) {
@@ -327,9 +332,34 @@ export class InspectorServer {
         break;
       }
 
-      case "app_connected":
+      case "app_connected": {
         console.log(`[NetInspector] App handshake: ${JSON.stringify(payload)}`);
+        // Re-push all enabled mock rules to the reconnected client so that
+        // hot-restart doesn't clear the active mock set on the Flutter side.
+        const enabledRules = this._storedRules.filter(
+          (r) => (r as Record<string, unknown>)["enabled"] !== false
+        );
+        for (const rule of enabledRules) {
+          const r = rule as Record<string, unknown>;
+          this.sendTo(ws, {
+            type: "mock_rule_add",
+            id: r["id"] || `rule_${Date.now()}`,
+            payload: r,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        if (enabledRules.length > 0) {
+          console.log(`[NetInspector] Re-pushed ${enabledRules.length} mock rule(s) to reconnected client`);
+        }
+        // Signal that all rules have been delivered — Flutter unblocks onRequest.
+        this.sendTo(ws, {
+          type: "rules_synced",
+          id: `sync_${Date.now()}`,
+          payload: { count: enabledRules.length },
+          timestamp: new Date().toISOString(),
+        });
         break;
+      }
 
       case "app_disconnected":
         console.log("[NetInspector] App disconnected gracefully");

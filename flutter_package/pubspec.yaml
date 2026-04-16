@@ -2,8 +2,8 @@ name: flutter_net_inspector
 description: >
   Flipper/Stetho-like network inspector for Flutter. Dio interceptor
   with real-time mocking, breakpoints, and a VSCode extension dashboard.
-version: 0.1.0
-
+version: 0.1.1
+homepage: https://github.com/herisulistiyanto/flutter_net_inspector
 repository: https://github.com/herisulistiyanto/flutter_net_inspector
 issue_tracker: https://github.com/herisulistiyanto/flutter_net_inspector/issues
 

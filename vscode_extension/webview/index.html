@@ -1008,8 +1008,13 @@
     });
 
     function addEntry(entry) {
-      entries.push(entry);
-      if (entries.length > 1000) entries.splice(0, entries.length - 500);
+      const existingIdx = entries.findIndex(e => e.id === entry.id);
+      if (existingIdx !== -1) {
+        entries[existingIdx] = entry; // replace stale entry with same ID
+      } else {
+        entries.push(entry);
+        if (entries.length > 1000) entries.splice(0, entries.length - 500);
+      }
       render();
     }
 

@@ -19,6 +19,7 @@ enum MessageType {
   modify_response, // real-time response editing (breakpoint mode)
   resume_response, // resume paused response as-is
   replay_request, // re-send a captured request
+  rules_synced, // server finished pushing all active rules after reconnect
 
   // Flutter -> VSCode (replay result)
   replay_result,
