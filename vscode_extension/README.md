@@ -20,20 +20,20 @@ Think of it as **Flipper/Stetho for Flutter**, built into your editor.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_net_inspector: ^0.1.0
+  flutter_net_inspector: ^0.1.1
 ```
 
 Wire up the interceptor and call `connect()` in debug mode. Full setup guide: [pub.dev/packages/flutter_net_inspector](https://pub.dev/packages/flutter_net_inspector).
 
 ### 2. Open the dashboard
 
-Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run:
+Click the **Net Inspector** icon in the Activity Bar (left sidebar), or open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run:
 
 ```
 Flutter Net Inspector: Open Dashboard
 ```
 
-The WebSocket server starts automatically and the dashboard opens in a panel. Run your Flutter app — traffic appears in real time.
+The dashboard opens in a panel. If the WebSocket server is not yet running, start it with the **Start Server** button in the dashboard or via the `Flutter Net Inspector: Start Server` command. Once the server is running and your Flutter app is connected, traffic appears in real time.
 
 ---
 
@@ -45,7 +45,7 @@ Every HTTP request and response is captured as it happens — method, status cod
 ### Mock responses
 Intercept any endpoint and return a custom response — status code, headers, body, and optional simulated latency — without touching your server or app code. Mocked entries are highlighted in the list so you always know what's real.
 
-Right-click any captured request and choose **Mock this** to open the mock editor pre-filled with that request's data.
+Open the **⋮** menu on any captured request row and choose **Mock this** to open the mock editor pre-filled with that request's data.
 
 ### Breakpoints
 Pause a response mid-flight, inspect and edit its body or status code in the VSCode panel, then resume it. Useful for testing how your app handles edge-case server responses without needing a real server that returns them.
