@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — 2026-04-21
+
+- Replaced the custom JSON editor (response headers & response body) in the mock editor with CodeMirror 6 — fixes cursor misplacement issues.
+- JSON editors now provide line numbers, syntax highlighting, real-time linting, bracket matching, code folding, undo/redo, and search (Ctrl/Cmd+F).
+- Added a "Format" button for the response headers field, matching the existing one on the response body field.
+
 ## 0.1.1 — 2026-04-16
 
 - Fixed mock rules not being applied after Flutter hot-restart — active rules are now re-pushed to the app on every reconnect.
