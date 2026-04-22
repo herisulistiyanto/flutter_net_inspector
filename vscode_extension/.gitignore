@@ -7,3 +7,5 @@ dist/
 .history/
 *.log
 .DS_Store
+webview/cm-editor.js
+webview/cm-editor.js.map
