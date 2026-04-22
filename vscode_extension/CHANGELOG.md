@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## 0.1.2 — 2026-04-21
 
 - Replaced the custom JSON editor (response headers & response body) in the mock editor with CodeMirror 6 — fixes cursor misplacement issues.
