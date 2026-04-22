@@ -2,7 +2,7 @@
   "name": "flutter-net-inspector",
   "displayName": "Flutter Net Inspector",
   "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "kjokkenkoddinger",
   "license": "MIT",
   "engines": {
@@ -26,7 +26,9 @@
   },
   "homepage": "https://github.com/herisulistiyanto/flutter_net_inspector/#readme",
   "icon": "logo.png",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -113,9 +115,12 @@
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
   },
   "devDependencies": {
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lint": "^6.9.5",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.0",
+    "codemirror": "^6.0.2",
     "esbuild": "^0.28.0",
     "prettier": "^3.8.2",
     "typescript": "^5.3.0"

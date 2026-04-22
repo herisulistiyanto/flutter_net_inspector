@@ -313,9 +313,15 @@ export class InspectorPanel {
         <p>Could not load webview/index.html.</p></body></html>`;
     }
 
+    // Compute webview URI for the CodeMirror editor bundle
+    const editorUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "webview", "cm-editor.js")
+    );
+
     return html
       .replace(/\{\{nonce\}\}/g, nonce)
-      .replace(/\{\{cspSource\}\}/g, this.panel.webview.cspSource);
+      .replace(/\{\{cspSource\}\}/g, this.panel.webview.cspSource)
+      .replace(/\{\{editorUri\}\}/g, editorUri.toString());
   }
 
   private dispose() {
