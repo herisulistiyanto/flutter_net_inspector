@@ -50,12 +50,41 @@ const extensionConfig = {
     keepNames: false,
 };
 
+// Webview bundle — CodeMirror 6 JSON editor (runs in the browser sandbox)
+const webviewEditorConfig = {
+	plugins: [
+		esbuildProblemMatcherPlugin
+	],
+	entryPoints: ["webview/src/json-editor.js"],
+	bundle: true,
+	format: "iife",
+	minify: production,
+	minifyWhitespace: production,
+	minifyIdentifiers: production,
+	minifySyntax: production,
+	treeShaking: true,
+	sourcemap: !production,
+	sourcesContent: false,
+	platform: "browser",
+	target: "es2020",
+	outfile: "webview/cm-editor.js",
+	logLevel: "info",
+	legalComments: "none",
+	metafile: true,
+};
+
 async function main() {
 	if (watch) {
-		const ctx = await esbuild.context(extensionConfig);
-		await ctx.watch();
+		const [extCtx, webCtx] = await Promise.all([
+			esbuild.context(extensionConfig),
+			esbuild.context(webviewEditorConfig),
+		]);
+		await Promise.all([extCtx.watch(), webCtx.watch()]);
 	} else {
-		await esbuild.build(extensionConfig);
+		await Promise.all([
+			esbuild.build(extensionConfig),
+			esbuild.build(webviewEditorConfig),
+		]);
 	}
 }
 

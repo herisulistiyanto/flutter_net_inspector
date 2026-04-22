@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-      style-src {{cspSource}} 'nonce-{{nonce}}';
-      script-src 'nonce-{{nonce}}';">
+      style-src {{cspSource}} 'unsafe-inline';
+      script-src 'nonce-{{nonce}}';
+      font-src {{cspSource}};">
   <title>Net Inspector</title>
   <style nonce="{{nonce}}">
     :root {
@@ -697,46 +698,15 @@
       color: var(--fg-muted);
     }
 
-    /* JSON Editor syntax highlight overlay */
-    .json-editor-wrapper {
-      position: relative;
-    }
-    .json-editor-backdrop {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 1;
-      padding: 5px 8px; /* sync with .form-textarea */
-      margin: 0;
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: 12px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-all;
-      tab-size: 2;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
+    /* CodeMirror 6 editor containers */
+    .cm-editor-container {
       border-radius: 4px;
-      color: var(--fg);
-      overflow-y: auto;
-      overflow-x: hidden;
-      pointer-events: none;
+      overflow: hidden;
     }
-    .json-editor-backdrop::-webkit-scrollbar {
-      display: none;
-      width: 0;
-      height: 0;
+    .cm-editor-container .cm-editor {
+      max-height: 50vh;
     }
-    .json-editor-textarea {
-      position: relative;
-      z-index: 2;
-      background: transparent !important;
-      color: transparent !important;
-      caret-color: var(--input-fg);
-    }
-    .json-editor-textarea.json-invalid {
+    .cm-editor-container.cm-invalid .cm-editor {
       border-color: var(--error) !important;
     }
   </style>
@@ -903,20 +873,18 @@
         </div>
 
         <div class="form-row">
-          <label class="form-label">Response headers (JSON)</label>
-          <input class="form-input" type="text" id="fHeaders"
-            value='{"content-type":"application/json"}'>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+            <label class="form-label" style="margin:0">Response headers (JSON)</label>
+            <button class="btn btn-sm" type="button" id="btnFormatHeaders" title="Pretty-print JSON">{ } Format</button>
+          </div>
+          <div class="cm-editor-container" id="fHeadersContainer"></div>
         </div>
         <div class="form-row">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
             <label class="form-label" style="margin:0">Response body</label>
             <button class="btn btn-sm" type="button" id="btnFormatBody" title="Pretty-print JSON">{ } Format</button>
           </div>
-          <div class="json-editor-wrapper">
-            <div id="fBodyHighlight" class="json-editor-backdrop"></div>
-            <textarea class="form-textarea json-editor-textarea" id="fBody"
-              placeholder='{"message": "Hello from mock"}' spellcheck="false"></textarea>
-          </div>
+          <div class="cm-editor-container" id="fBodyContainer"></div>
           <div id="fBodyError" style="display:none;font-size:11px;color:var(--error);margin-top:3px"></div>
         </div>
       </div>
@@ -927,6 +895,7 @@
     </div>
   </div>
 
+  <script nonce="{{nonce}}" src="{{editorUri}}"></script>
   <script nonce="{{nonce}}">
     const vscode = acquireVsCodeApi();
 
@@ -1411,52 +1380,69 @@
       sel.value = closest.value;
     }
 
-    function prettyFormatBody() {
-      const ta = document.getElementById('fBody');
-      const val = (ta.value || '').trim();
-      if (!val) return;
-      try {
-        ta.value = JSON.stringify(JSON.parse(val), null, 2);
-        updateMockBodyHighlight();
-      } catch(e) {
-        // Not valid JSON — leave as-is
+    // ---- CodeMirror 6 editor instances ----
+    let cmHeadersEditor = null;
+    let cmBodyEditor = null;
+
+    function ensureCMEditors() {
+      if (!cmHeadersEditor) {
+        const container = document.getElementById('fHeadersContainer');
+        cmHeadersEditor = CMEditor.create(container, {
+          doc: '{"content-type":"application/json"}',
+          minHeight: '48px',
+        });
+      }
+      if (!cmBodyEditor) {
+        const container = document.getElementById('fBodyContainer');
+        cmBodyEditor = CMEditor.create(container, {
+          doc: '',
+          minHeight: '140px',
+          onValidate: function(valid, message) {
+            const errEl = document.getElementById('fBodyError');
+            const wrapper = document.getElementById('fBodyContainer');
+            if (!errEl) return;
+            if (valid) {
+              wrapper.classList.remove('cm-invalid');
+              errEl.style.display = 'none';
+            } else {
+              wrapper.classList.add('cm-invalid');
+              errEl.textContent = 'Invalid JSON: ' + message;
+              errEl.style.display = 'block';
+            }
+          },
+        });
       }
     }
 
-    function updateMockBodyHighlight() {
-      const ta = document.getElementById('fBody');
-      const hl = document.getElementById('fBodyHighlight');
-      if (!ta || !hl) return;
-      hl.innerHTML = syntaxHLRaw(ta.value || ta.placeholder || '');
+    function prettyFormatHeaders() {
+      if (cmHeadersEditor) cmHeadersEditor.format();
+    }
+
+    function prettyFormatBody() {
+      if (cmBodyEditor) cmBodyEditor.format();
     }
 
     function validateMockBody() {
-      const ta = document.getElementById('fBody');
+      // Validation is handled by CM6 onValidate callback — trigger manually
+      if (!cmBodyEditor) return;
+      const val = cmBodyEditor.getValue().trim();
       const errEl = document.getElementById('fBodyError');
-      if (!ta || !errEl) return;
-      const val = ta.value.trim();
+      const wrapper = document.getElementById('fBodyContainer');
+      if (!errEl) return;
       if (!val) {
-        ta.classList.remove('json-invalid');
+        wrapper.classList.remove('cm-invalid');
         errEl.style.display = 'none';
         return;
       }
       try {
         JSON.parse(val);
-        ta.classList.remove('json-invalid');
+        wrapper.classList.remove('cm-invalid');
         errEl.style.display = 'none';
       } catch (e) {
-        ta.classList.add('json-invalid');
+        wrapper.classList.add('cm-invalid');
         errEl.textContent = 'Invalid JSON: ' + e.message;
         errEl.style.display = 'block';
       }
-    }
-
-    function syncMockBodyScroll() {
-      const ta = document.getElementById('fBody');
-      const hl = document.getElementById('fBodyHighlight');
-      if (!ta || !hl) return;
-      hl.scrollTop = ta.scrollTop;
-      hl.scrollLeft = ta.scrollLeft;
     }
 
     // ---- Mock editor ----
@@ -1470,10 +1456,10 @@
       document.getElementById('fAction').value = 'mockBeforeRequest';
       setStatusCode(prefill?.statusCode || 200);
       document.getElementById('fDelay').value = 0;
-      document.getElementById('fBody').value = prefill?.body || '';
-      document.getElementById('fHeaders').value = '{"content-type":"application/json"}';
       document.getElementById('mockOverlay').classList.add('open');
-      updateMockBodyHighlight();
+      ensureCMEditors();
+      cmBodyEditor.setValue(prefill?.body || '');
+      cmHeadersEditor.setValue('{"content-type":"application/json"}');
       validateMockBody();
     }
 
@@ -1489,10 +1475,10 @@
       document.getElementById('fAction').value = 'mockBeforeRequest';
       setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
-      document.getElementById('fBody').value = tryStringify(entry.responseBody);
-      document.getElementById('fHeaders').value = JSON.stringify(entry.responseHeaders || {"content-type":"application/json"});
       document.getElementById('mockOverlay').classList.add('open');
-      updateMockBodyHighlight();
+      ensureCMEditors();
+      cmBodyEditor.setValue(tryStringify(entry.responseBody));
+      cmHeadersEditor.setValue(JSON.stringify(entry.responseHeaders || {"content-type":"application/json"}));
       validateMockBody();
     }
 
@@ -1508,10 +1494,10 @@
       document.getElementById('fAction').value = rule.action;
       setStatusCode(rule.mockResponse?.statusCode || 200);
       document.getElementById('fDelay').value = rule.mockResponse?.delayMs || 0;
-      document.getElementById('fBody').value = tryStringify(rule.mockResponse?.body);
-      document.getElementById('fHeaders').value = JSON.stringify(rule.mockResponse?.headers || {});
       document.getElementById('mockOverlay').classList.add('open');
-      updateMockBodyHighlight();
+      ensureCMEditors();
+      cmBodyEditor.setValue(tryStringify(rule.mockResponse?.body));
+      cmHeadersEditor.setValue(JSON.stringify(rule.mockResponse?.headers || {}));
       validateMockBody();
     }
 
@@ -1520,21 +1506,24 @@
       editingRuleId = null;
       modifyRequestId = null;
       // clear any lingering validation state
-      const ta = document.getElementById('fBody');
       const errEl = document.getElementById('fBodyError');
-      if (ta) ta.classList.remove('json-invalid');
+      const wrapper = document.getElementById('fBodyContainer');
+      if (wrapper) wrapper.classList.remove('cm-invalid');
       if (errEl) errEl.style.display = 'none';
     }
 
     function saveMockRule() {
+      const headersVal = cmHeadersEditor ? cmHeadersEditor.getValue() : '{}';
+      const bodyVal = cmBodyEditor ? cmBodyEditor.getValue() : '';
+
       if (modifyRequestId) {
         vscode.postMessage({
           command: 'modifyResponse',
           data: {
             requestId: modifyRequestId,
             statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
-            headers: tryParse(document.getElementById('fHeaders').value) || {},
-            body: tryParse(document.getElementById('fBody').value),
+            headers: tryParse(headersVal) || {},
+            body: tryParse(bodyVal),
           },
         });
         const entry = entries.find(e => e.id === modifyRequestId);
@@ -1552,8 +1541,8 @@
         action: document.getElementById('fAction').value,
         mockResponse: {
           statusCode: parseInt(document.getElementById('fStatusCode').value, 10),
-          headers: tryParse(document.getElementById('fHeaders').value) || {"content-type":"application/json"},
-          body: tryParse(document.getElementById('fBody').value),
+          headers: tryParse(headersVal) || {"content-type":"application/json"},
+          body: tryParse(bodyVal),
           delayMs: parseInt(document.getElementById('fDelay').value) || 0,
         },
       };
@@ -1634,12 +1623,12 @@
       document.getElementById('fAction').value = 'mockBeforeRequest';
       setStatusCode(entry.statusCode || 200);
       document.getElementById('fDelay').value = 0;
-      document.getElementById('fBody').value = tryStringify(entry.responseBody);
-      document.getElementById('fHeaders').value = JSON.stringify(
-        entry.responseHeaders || {"content-type":"application/json"}
-      );
       document.getElementById('mockOverlay').classList.add('open');
-      updateMockBodyHighlight();
+      ensureCMEditors();
+      cmBodyEditor.setValue(tryStringify(entry.responseBody));
+      cmHeadersEditor.setValue(JSON.stringify(
+        entry.responseHeaders || {"content-type":"application/json"}
+      ));
       validateMockBody();
     }
 
@@ -1819,12 +1808,8 @@
       if (action === 'close-modal') closeMockEditor();
     });
 
-    // Mock editor JSON body highlighting + validation
-    document.getElementById('fBody').addEventListener('input', () => {
-      updateMockBodyHighlight();
-      validateMockBody();
-    });
-    document.getElementById('fBody').addEventListener('scroll', syncMockBodyScroll);
+    // Mock editor — format buttons (CM6 handles highlighting + validation internally)
+    document.getElementById('btnFormatHeaders').addEventListener('click', prettyFormatHeaders);
     document.getElementById('btnFormatBody').addEventListener('click', prettyFormatBody);
 
     // ---- Row context menu ----
