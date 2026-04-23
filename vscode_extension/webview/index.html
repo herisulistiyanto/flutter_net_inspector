@@ -709,6 +709,16 @@
     .cm-editor-container.cm-invalid .cm-editor {
       border-color: var(--error) !important;
     }
+    .cm-editor-container.cm-detail-error .cm-editor {
+      border-color: var(--error) !important;
+    }
+    /* Read-only detail viewers — no min-height, scroll naturally */
+    .cm-detail-view .cm-editor {
+      max-height: 100%;
+    }
+    .cm-detail-view .cm-content {
+      min-height: 0 !important;
+    }
   </style>
 </head>
 <body>
@@ -954,7 +964,10 @@
             e2.statusCode = payload.statusCode;
             e2.durationMs = payload.durationMs;
             e2.error = { type: payload.type, message: payload.message };
+            if (payload.body != null) e2.responseBody = payload.body;
+            if (payload.headers && Object.keys(payload.headers).length > 0) e2.responseHeaders = payload.headers;
             render();
+            if (selectedId === e2.id) renderDetail(e2);
           }
           break;
         }
@@ -1199,6 +1212,7 @@
     }
 
     function renderDetailTab(entry, tab) {
+      destroyDetailEditors();
       const body = document.getElementById('detailBody');
       let html = '';
 
@@ -1234,23 +1248,24 @@
         case 'request':
           html += sec('Request body');
           if (entry.requestBody != null) {
-            html += '<div class="json-view">' + syntaxHL(entry.requestBody) + '</div>';
+            html += '<div id="cmDetailReqContainer" class="cm-editor-container cm-detail-view"></div>';
           } else {
             html += '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
           }
           break;
 
-        case 'response':
+        case 'response': {
+          const hasBody = entry.responseBody != null;
+          const hasError = !!entry.error && !hasBody;
           html += sec('Response body');
-          if (entry.responseBody != null) {
-            html += '<div class="json-view">' + syntaxHL(entry.responseBody) + '</div>';
-          } else if (entry.error) {
-            html += '<div class="json-view" style="border-color:var(--error)">'
-              + syntaxHL(entry.error) + '</div>';
-          } else {
+          if (hasBody || hasError) {
+            html += '<div id="cmDetailResContainer" class="cm-editor-container cm-detail-view'
+              + (hasError ? ' cm-detail-error' : '') + '"></div>';
+          } else if (!hasBody && !entry.error) {
             html += '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
           }
           break;
+        }
 
         case 'headers':
           html += sec('Request headers');
@@ -1262,6 +1277,25 @@
           break;
       }
       body.innerHTML = html;
+
+      // Mount read-only CM editors after innerHTML is set
+      if (tab === 'request' && entry.requestBody != null) {
+        const c = document.getElementById('cmDetailReqContainer');
+        if (c) {
+          cmDetailReqEditor = CMEditor.create(c, { doc: tryStringify(entry.requestBody), readOnly: true, minHeight: '60px' });
+          cmDetailReqEditor.format();
+        }
+      }
+      if (tab === 'response') {
+        const data = entry.responseBody != null ? entry.responseBody : entry.error;
+        if (data != null) {
+          const c = document.getElementById('cmDetailResContainer');
+          if (c) {
+            cmDetailResEditor = CMEditor.create(c, { doc: tryStringify(data), readOnly: true, minHeight: '60px' });
+            cmDetailResEditor.format();
+          }
+        }
+      }
     }
 
     function switchDetailTab(el, tab) {
@@ -1273,6 +1307,7 @@
     }
 
     function closeDetail() {
+      destroyDetailEditors();
       selectedId = null;
       document.getElementById('app').classList.remove('detail-open');
       document.getElementById('detailPanel').classList.remove('open');
@@ -1383,6 +1418,15 @@
     // ---- CodeMirror 6 editor instances ----
     let cmHeadersEditor = null;
     let cmBodyEditor = null;
+
+    // Read-only CM editors for the detail panel (request / response tabs)
+    let cmDetailReqEditor = null;
+    let cmDetailResEditor = null;
+
+    function destroyDetailEditors() {
+      if (cmDetailReqEditor) { cmDetailReqEditor.destroy(); cmDetailReqEditor = null; }
+      if (cmDetailResEditor) { cmDetailResEditor.destroy(); cmDetailResEditor = null; }
+    }
 
     function ensureCMEditors() {
       if (!cmHeadersEditor) {
