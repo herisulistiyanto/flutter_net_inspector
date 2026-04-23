@@ -20,7 +20,7 @@ Think of it as **Flipper/Stetho for Flutter**, built into your editor.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_net_inspector: ^0.1.1
+  flutter_net_inspector: ^0.1.2
 ```
 
 Wire up the interceptor and call `connect()` in debug mode. Full setup guide: [pub.dev/packages/flutter_net_inspector](https://pub.dev/packages/flutter_net_inspector).
