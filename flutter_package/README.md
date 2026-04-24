@@ -12,7 +12,7 @@ Think of it as **Flipper/Stetho for Flutter**, but the dashboard lives inside VS
 
 ```yaml
 dependencies:
-  flutter_net_inspector: ^0.1.0
+  flutter_net_inspector: ^0.1.2
 ```
 
 ---
@@ -183,4 +183,4 @@ The request is now intercepted. The row is highlighted, the detail panel shows t
 ## Companion
 
 This package requires the **Flutter Net Inspector** VSCode extension to display the dashboard.
-Install it from the VS Code Marketplace or from open-vsx.
+Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kjokkenkoddinger.flutter-net-inspector) or from [open-vsx](https://open-vsx.org/extension/kjokkenkoddinger/flutter-net-inspector).
