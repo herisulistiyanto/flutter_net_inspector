@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — 2026-04-23
+
+- Fixed error responses (4xx/5xx) not sending body and headers to the VSCode extension — `onError` now includes `body` and `headers` from the Dio error response.
+
 ## 0.1.1 — 2026-04-16
 
 - Fixed mock rules not taking effect on the first requests after a hot-restart. A `rules_synced` handshake now ensures all active rules are loaded before any request is intercepted.

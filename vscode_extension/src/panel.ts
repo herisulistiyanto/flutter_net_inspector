@@ -74,6 +74,7 @@ export class InspectorPanel {
         localResourceRoots: [vscode.Uri.joinPath(extensionUri, "webview")],
       }
     );
+    panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "globe.svg");
 
     InspectorPanel.currentPanel = new InspectorPanel(panel, extensionUri, server);
   }

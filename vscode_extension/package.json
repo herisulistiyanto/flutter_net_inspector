@@ -2,7 +2,7 @@
   "name": "flutter-net-inspector",
   "displayName": "Flutter Net Inspector",
   "description": "Network inspector dashboard for Flutter apps — view, mock, and modify HTTP responses in real-time",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "kjokkenkoddinger",
   "license": "MIT",
   "engines": {
@@ -106,7 +106,7 @@
     "package": "node esbuild.js --production",
     "package:dev": "node esbuild.js",
     "clean": "node -e \"const fs=require('fs');const p=require('path');['out'].forEach(d=>{if(fs.existsSync(d))fs.rmSync(d,{recursive:true})});fs.readdirSync('.').filter(f=>f.endsWith('.vsix')).forEach(f=>fs.unlinkSync(f));console.log('Cleaned')\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p webview/tsconfig.json",
     "prebuild:vsix": "npm run clean && npm run typecheck",
     "build:vsix": "npm run package && npx vsce package",
     "pretest": "npm run compile && npm run lint",
