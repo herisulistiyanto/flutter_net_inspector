@@ -474,6 +474,10 @@
       height: 1px;
       background: var(--border);
     }
+    .detail-section-title { cursor: pointer; user-select: none; }
+    .section-arrow { font-size: 8px; flex-shrink: 0; transition: transform 0.15s; }
+    .detail-section.collapsed .section-arrow { transform: rotate(-90deg); }
+    .detail-section.collapsed .section-content { display: none; }
 
     /* JSON viewer */
     .json-view {
@@ -1217,9 +1221,8 @@
       let html = '';
 
       switch (tab) {
-        case 'overview':
-          html += sec('General');
-          html += '<table class="header-table">'
+        case 'overview': {
+          const generalContent = '<table class="header-table">'
             + tr('URL', entry.url)
             + tr('Method', entry.method)
             + tr('Status', entry.statusCode ?? (entry.error ? 'Error' : 'Pending'))
@@ -1228,52 +1231,55 @@
             + (entry.mocked ? tr('Type', '<span style="color:var(--mocked)">Mocked</span>') : '')
             + (entry.breakpoint ? tr('Type', '<span style="color:var(--warn)">Breakpoint (paused)</span>') : '')
             + '</table>';
+          html += sec('General', generalContent);
 
           if (entry.error) {
-            html += sec('Error');
-            html += '<div class="json-view" style="border-color:var(--error)">'
-              + syntaxHL(entry.error) + '</div>';
+            const errContent = '<table class="header-table">'
+              + tr('Type', '<span style="color:var(--error)">' + esc(entry.error.type || '') + '</span>')
+              + tr('Message', esc(entry.error.message || ''))
+              + '</table>';
+            html += sec('Error', errContent);
           }
 
           if (Object.keys(entry.queryParameters || {}).length > 0) {
-            html += sec('Query parameters');
-            html += '<table class="header-table">';
+            let qpContent = '<table class="header-table">';
             for (const [k, v] of Object.entries(entry.queryParameters)) {
-              html += tr(k, v);
+              qpContent += tr(k, v);
             }
-            html += '</table>';
-          }
-          break;
-
-        case 'request':
-          html += sec('Request body');
-          if (entry.requestBody != null) {
-            html += '<div id="cmDetailReqContainer" class="cm-editor-container cm-detail-view"></div>';
-          } else {
-            html += '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
-          }
-          break;
-
-        case 'response': {
-          const hasBody = entry.responseBody != null;
-          const hasError = !!entry.error && !hasBody;
-          html += sec('Response body');
-          if (hasBody || hasError) {
-            html += '<div id="cmDetailResContainer" class="cm-editor-container cm-detail-view'
-              + (hasError ? ' cm-detail-error' : '') + '"></div>';
-          } else if (!hasBody && !entry.error) {
-            html += '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
+            qpContent += '</table>';
+            html += sec('Query Parameters', qpContent);
           }
           break;
         }
 
-        case 'headers':
-          html += sec('Request headers');
-          html += headersTable(entry.requestHeaders);
-          if (entry.responseHeaders) {
-            html += sec('Response headers');
-            html += headersTable(entry.responseHeaders);
+        case 'request': {
+          html += sec('Request Headers', headersTable(entry.requestHeaders));
+          const bodyContent = entry.requestBody != null
+            ? '<div id="cmDetailReqContainer" class="cm-editor-container cm-detail-view"></div>'
+            : '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
+          html += sec('Request Body', bodyContent);
+          break;
+        }
+
+        case 'response': {
+          const hasBody = entry.responseBody != null;
+          const hasError = !!entry.error && !hasBody;
+          let bodyContent;
+          if (hasBody || hasError) {
+            bodyContent = '<div id="cmDetailResContainer" class="cm-editor-container cm-detail-view'
+              + (hasError ? ' cm-detail-error' : '') + '"></div>';
+          } else {
+            bodyContent = '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
           }
+          html += sec('Response Body', bodyContent);
+          break;
+        }
+
+        case 'headers':
+          html += sec('Request Headers', headersTable(entry.requestHeaders));
+          html += sec('Response Headers', entry.responseHeaders
+            ? headersTable(entry.responseHeaders)
+            : '<div style="color:var(--fg-muted);padding:8px;">No response headers yet</div>');
           break;
       }
       body.innerHTML = html;
@@ -1729,8 +1735,12 @@
     }
 
     // ---- Helpers ----
-    function sec(title) {
-      return '<div class="detail-section"><div class="detail-section-title">' + title + '</div></div>';
+    function sec(title, contentHtml) {
+      return '<div class="detail-section">'
+        + '<div class="detail-section-title" data-toggle-section>'
+        + '<span class="section-arrow">▼</span>' + title + '</div>'
+        + '<div class="section-content">' + (contentHtml || '') + '</div>'
+        + '</div>';
     }
     function tr(k, v) {
       return '<tr><td>' + esc(k) + '</td><td>' + v + '</td></tr>';
@@ -1813,6 +1823,14 @@
 
       var delBtn = e.target.closest('[data-del-rule]');
       if (delBtn) return deleteMockRule(delBtn.dataset.delRule);
+    });
+
+    // Section collapse toggle
+    document.getElementById('detailBody').addEventListener('click', function(e) {
+      var header = e.target.closest('[data-toggle-section]');
+      if (!header) return;
+      var section = header.closest('.detail-section');
+      if (section) section.classList.toggle('collapsed');
     });
 
     // Detail header buttons
