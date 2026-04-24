@@ -474,6 +474,10 @@
       height: 1px;
       background: var(--border);
     }
+    .detail-section-title { cursor: pointer; user-select: none; }
+    .section-arrow { font-size: 8px; flex-shrink: 0; transition: transform 0.15s; }
+    .detail-section.collapsed .section-arrow { transform: rotate(-90deg); }
+    .detail-section.collapsed .section-content { display: none; }
 
     /* JSON viewer */
     .json-view {
@@ -708,6 +712,16 @@
     }
     .cm-editor-container.cm-invalid .cm-editor {
       border-color: var(--error) !important;
+    }
+    .cm-editor-container.cm-detail-error .cm-editor {
+      border-color: var(--error) !important;
+    }
+    /* Read-only detail viewers — no min-height, scroll naturally */
+    .cm-detail-view .cm-editor {
+      max-height: 100%;
+    }
+    .cm-detail-view .cm-content {
+      min-height: 0 !important;
     }
   </style>
 </head>
@@ -954,7 +968,10 @@
             e2.statusCode = payload.statusCode;
             e2.durationMs = payload.durationMs;
             e2.error = { type: payload.type, message: payload.message };
+            if (payload.body != null) e2.responseBody = payload.body;
+            if (payload.headers && Object.keys(payload.headers).length > 0) e2.responseHeaders = payload.headers;
             render();
+            if (selectedId === e2.id) renderDetail(e2);
           }
           break;
         }
@@ -1199,13 +1216,13 @@
     }
 
     function renderDetailTab(entry, tab) {
+      destroyDetailEditors();
       const body = document.getElementById('detailBody');
       let html = '';
 
       switch (tab) {
-        case 'overview':
-          html += sec('General');
-          html += '<table class="header-table">'
+        case 'overview': {
+          const generalContent = '<table class="header-table">'
             + tr('URL', entry.url)
             + tr('Method', entry.method)
             + tr('Status', entry.statusCode ?? (entry.error ? 'Error' : 'Pending'))
@@ -1214,54 +1231,77 @@
             + (entry.mocked ? tr('Type', '<span style="color:var(--mocked)">Mocked</span>') : '')
             + (entry.breakpoint ? tr('Type', '<span style="color:var(--warn)">Breakpoint (paused)</span>') : '')
             + '</table>';
+          html += sec('General', generalContent);
 
           if (entry.error) {
-            html += sec('Error');
-            html += '<div class="json-view" style="border-color:var(--error)">'
-              + syntaxHL(entry.error) + '</div>';
+            const errContent = '<table class="header-table">'
+              + tr('Type', '<span style="color:var(--error)">' + esc(entry.error.type || '') + '</span>')
+              + tr('Message', esc(entry.error.message || ''))
+              + '</table>';
+            html += sec('Error', errContent);
           }
 
           if (Object.keys(entry.queryParameters || {}).length > 0) {
-            html += sec('Query parameters');
-            html += '<table class="header-table">';
+            let qpContent = '<table class="header-table">';
             for (const [k, v] of Object.entries(entry.queryParameters)) {
-              html += tr(k, v);
+              qpContent += tr(k, v);
             }
-            html += '</table>';
+            qpContent += '</table>';
+            html += sec('Query Parameters', qpContent);
           }
           break;
+        }
 
-        case 'request':
-          html += sec('Request body');
-          if (entry.requestBody != null) {
-            html += '<div class="json-view">' + syntaxHL(entry.requestBody) + '</div>';
-          } else {
-            html += '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
-          }
+        case 'request': {
+          html += sec('Request Headers', headersTable(entry.requestHeaders));
+          const bodyContent = entry.requestBody != null
+            ? '<div id="cmDetailReqContainer" class="cm-editor-container cm-detail-view"></div>'
+            : '<div style="color:var(--fg-muted);padding:8px;">No request body</div>';
+          html += sec('Request Body', bodyContent);
           break;
+        }
 
-        case 'response':
-          html += sec('Response body');
-          if (entry.responseBody != null) {
-            html += '<div class="json-view">' + syntaxHL(entry.responseBody) + '</div>';
-          } else if (entry.error) {
-            html += '<div class="json-view" style="border-color:var(--error)">'
-              + syntaxHL(entry.error) + '</div>';
+        case 'response': {
+          const hasBody = entry.responseBody != null;
+          const hasError = !!entry.error && !hasBody;
+          let bodyContent;
+          if (hasBody || hasError) {
+            bodyContent = '<div id="cmDetailResContainer" class="cm-editor-container cm-detail-view'
+              + (hasError ? ' cm-detail-error' : '') + '"></div>';
           } else {
-            html += '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
+            bodyContent = '<div style="color:var(--fg-muted);padding:8px;">No response yet</div>';
           }
+          html += sec('Response Body', bodyContent);
           break;
+        }
 
         case 'headers':
-          html += sec('Request headers');
-          html += headersTable(entry.requestHeaders);
-          if (entry.responseHeaders) {
-            html += sec('Response headers');
-            html += headersTable(entry.responseHeaders);
-          }
+          html += sec('Request Headers', headersTable(entry.requestHeaders));
+          html += sec('Response Headers', entry.responseHeaders
+            ? headersTable(entry.responseHeaders)
+            : '<div style="color:var(--fg-muted);padding:8px;">No response headers yet</div>');
           break;
       }
       body.innerHTML = html;
+
+      // Mount read-only CM editors after innerHTML is set
+      if (tab === 'request' && entry.requestBody != null) {
+        const c = document.getElementById('cmDetailReqContainer');
+        if (c) {
+          cmDetailReqEditor = CMEditor.create(c, { doc: tryStringify(entry.requestBody), readOnly: true, minHeight: '60px' });
+          cmDetailReqEditor.format();
+        }
+      }
+      if (tab === 'response') {
+        const data = entry.responseBody != null ? entry.responseBody : entry.error;
+        if (data != null) {
+          const c = document.getElementById('cmDetailResContainer');
+          if (c) {
+            cmDetailResEditor = CMEditor.create(c, { doc: tryStringify(data), readOnly: true, minHeight: '60px' });
+            cmDetailResEditor.format();
+          }
+        }
+      }
     }
 
     function switchDetailTab(el, tab) {
@@ -1273,6 +1313,7 @@
     }
 
     function closeDetail() {
+      destroyDetailEditors();
       selectedId = null;
       document.getElementById('app').classList.remove('detail-open');
       document.getElementById('detailPanel').classList.remove('open');
@@ -1383,6 +1424,15 @@
     // ---- CodeMirror 6 editor instances ----
     let cmHeadersEditor = null;
     let cmBodyEditor = null;
+
+    // Read-only CM editors for the detail panel (request / response tabs)
+    let cmDetailReqEditor = null;
+    let cmDetailResEditor = null;
+
+    function destroyDetailEditors() {
+      if (cmDetailReqEditor) { cmDetailReqEditor.destroy(); cmDetailReqEditor = null; }
+      if (cmDetailResEditor) { cmDetailResEditor.destroy(); cmDetailResEditor = null; }
+    }
 
     function ensureCMEditors() {
       if (!cmHeadersEditor) {
@@ -1685,8 +1735,12 @@
     }
 
     // ---- Helpers ----
-    function sec(title) {
-      return '<div class="detail-section"><div class="detail-section-title">' + title + '</div></div>';
+    function sec(title, contentHtml) {
+      return '<div class="detail-section">'
+        + '<div class="detail-section-title" data-toggle-section>'
+        + '<span class="section-arrow">▼</span>' + title + '</div>'
+        + '<div class="section-content">' + (contentHtml || '') + '</div>'
+        + '</div>';
     }
     function tr(k, v) {
       return '<tr><td>' + esc(k) + '</td><td>' + v + '</td></tr>';
@@ -1769,6 +1823,14 @@
 
       var delBtn = e.target.closest('[data-del-rule]');
       if (delBtn) return deleteMockRule(delBtn.dataset.delRule);
+    });
+
+    // Section collapse toggle
+    document.getElementById('detailBody').addEventListener('click', function(e) {
+      var header = e.target.closest('[data-toggle-section]');
+      if (!header) return;
+      var section = header.closest('.detail-section');
+      if (section) section.classList.toggle('collapsed');
     });
 
     // Detail header buttons

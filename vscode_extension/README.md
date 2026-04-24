@@ -20,7 +20,7 @@ Think of it as **Flipper/Stetho for Flutter**, built into your editor.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_net_inspector: ^0.1.1
+  flutter_net_inspector: ^0.1.2
 ```
 
 Wire up the interceptor and call `connect()` in debug mode. Full setup guide: [pub.dev/packages/flutter_net_inspector](https://pub.dev/packages/flutter_net_inspector).
@@ -97,7 +97,7 @@ The intercepted row is highlighted with a purple indicator. The detail panel sho
 | Setting | Default | Description |
 |---|---|---|
 | `flutterNetInspector.port` | `9555` | WebSocket server port |
-| `flutterNetInspector.autoStart` | `true` | Start the server automatically on activation |
+| `flutterNetInspector.autoStart` | `false` | Start the server not automatically on activation |
 | `flutterNetInspector.maxEntries` | `500` | Max requests kept in memory |
 
 ---

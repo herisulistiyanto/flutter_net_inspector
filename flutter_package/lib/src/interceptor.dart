@@ -312,6 +312,10 @@ class NetInspectorInterceptor extends Interceptor {
           'statusCode': err.response?.statusCode,
           'url': err.requestOptions.uri.toString(),
           'durationMs': durationMs,
+          'body': err.response?.data,
+          'headers': err.response != null
+              ? _flattenHeaders(err.response!.headers)
+              : <String, dynamic>{},
         });
       }
     }
