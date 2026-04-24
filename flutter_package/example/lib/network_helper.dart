@@ -10,10 +10,7 @@ final class NetworkHelper {
   late Dio dio;
 
   Future<void> init() async {
-    inspector = NetInspectorInterceptor(
-      host: '127.0.0.1',
-      port: 9555,
-    );
+    inspector = NetInspectorInterceptor(host: '127.0.0.1', port: 9555);
 
     /// connect to VSCode extension
     await inspector.connect();
@@ -21,9 +18,7 @@ final class NetworkHelper {
     dio = Dio(
       BaseOptions(
         baseUrl: 'https://jsonplaceholder.typicode.com',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
       ),
     )..interceptors.add(inspector);
 

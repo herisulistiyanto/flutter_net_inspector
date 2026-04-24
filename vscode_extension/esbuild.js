@@ -55,7 +55,7 @@ const webviewEditorConfig = {
 	plugins: [
 		esbuildProblemMatcherPlugin
 	],
-	entryPoints: ["webview/src/json-editor.js"],
+	entryPoints: ["webview/src/json-editor.ts"],
 	bundle: true,
 	format: "iife",
 	minify: production,

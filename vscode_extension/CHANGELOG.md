@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 — 2026-04-23
+
+- Fixed error responses (4xx/5xx) not showing body and headers in the detail panel — the `error_captured` handler now correctly stores and displays response body and headers from Dio errors.
+- Detail panel Request and Response tabs now use CodeMirror 6 read-only editors with syntax highlighting, line numbers, and code folding — replacing the previous plain-text view.
+- Converted webview editor source to TypeScript.
 
 ## 0.1.2 — 2026-04-21
 
