@@ -22,7 +22,7 @@ node_modules/@marijn/**
 node_modules/undici-types/**
 *.ts
 tsconfig.json
-esbuild.js
+esbuild.config.mjs
 .eslintrc*
 .prettierrc*
 .gitignore

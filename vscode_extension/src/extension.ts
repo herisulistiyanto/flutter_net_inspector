@@ -18,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       ActivityBarViewProvider.viewType,
-      new ActivityBarViewProvider(server)
+      new ActivityBarViewProvider(server, context.extension.packageJSON.version)
     )
   );
 
