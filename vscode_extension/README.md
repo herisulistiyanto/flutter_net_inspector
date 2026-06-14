@@ -29,7 +29,7 @@ Wire up the interceptor and call `connect()` in debug mode. Full setup guide: [p
 
 Click the **Net Inspector** icon in the Activity Bar (left sidebar), or open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run:
 
-```
+```text
 Flutter Net Inspector: Open Dashboard
 ```
 
@@ -40,39 +40,44 @@ The dashboard opens in a panel. If the WebSocket server is not yet running, star
 ## Features
 
 ### Live traffic capture
+
 Every HTTP request and response is captured as it happens — method, status code, URL, headers, body, and timing. Filter by URL, method, or status code. Sort by time. Click any row to inspect full details.
 
 ### Mock responses
+
 Intercept any endpoint and return a custom response — status code, headers, body, and optional simulated latency — without touching your server or app code. Mocked entries are highlighted in the list so you always know what's real.
 
 Open the **⋮** menu on any captured request row and choose **Mock this** to open the mock editor pre-filled with that request's data.
 
 ### Breakpoints
+
 Pause a response mid-flight, inspect and edit its body or status code in the VSCode panel, then resume it. Useful for testing how your app handles edge-case server responses without needing a real server that returns them.
 
 ### Request replay
+
 Re-fire any previously captured request from the dashboard with one click.
 
 ### Mock rule persistence
+
 Mock rules are saved to `.vscode/net-inspector-rules.json` in your workspace. Commit this file to share mock setups with your team. Rules are restored automatically the next time the extension activates.
 
 ---
 
 ## UI walkthrough
 
-**Inspect live traffic — Click three-dots for actions**
+### Inspect live traffic — Click three-dots for actions
 
 Every request appears as it happens. Open the context menu to mock the endpoint, replay the request, or copy it as a cURL command. Click the row to open the detail panel with full headers, body, and timing.
 
 ![Live traffic and context menu](https://raw.githubusercontent.com/herisulistiyanto/flutter_net_inspector/main/vscode_extension/images/showcase_1.png)
 
-**Configure a mock response**
+### Configure a mock response
 
 The mock editor opens pre-filled from the selected request. Adjust the status code, headers, response body, or add a simulated delay — then save. The rule takes effect on the next matching request immediately.
 
 ![Mock editor](https://raw.githubusercontent.com/herisulistiyanto/flutter_net_inspector/main/vscode_extension/images/showcase_2.png)
 
-**See the mock in action**
+### See the mock in action
 
 The intercepted row is highlighted with a purple indicator. The detail panel shows the mocked response body, and your Flutter app receives exactly the data you configured.
 
@@ -83,7 +88,7 @@ The intercepted row is highlighted with a purple indicator. The detail panel sho
 ## Dashboard overview
 
 | Area | What it does |
-|---|---|
+| --- | --- |
 | **Toolbar** | Connection status, URL/method/status filter, **+ Mock** button |
 | **All / Mocked / Errors / Mock Rules tabs** | Filter the list by category |
 | **Request row** | Click to open the detail panel; three-dot menu for Mock, Replay, Copy as cURL |
@@ -95,9 +100,9 @@ The intercepted row is highlighted with a purple indicator. The detail panel sho
 ## Extension settings
 
 | Setting | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `flutterNetInspector.port` | `9555` | WebSocket server port |
-| `flutterNetInspector.autoStart` | `false` | Start the server not automatically on activation |
+| `flutterNetInspector.autoStart` | `false` | The server NOT automatically on activation |
 | `flutterNetInspector.maxEntries` | `500` | Max requests kept in memory |
 
 ---
@@ -105,7 +110,7 @@ The intercepted row is highlighted with a purple indicator. The detail panel sho
 ## Commands
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `Flutter Net Inspector: Open Dashboard` | Open or reveal the dashboard panel |
 | `Flutter Net Inspector: Start Server` | Start the WebSocket server manually |
 | `Flutter Net Inspector: Stop Server` | Stop the server |
