@@ -1,11 +1,9 @@
-const esbuild = require('esbuild');
+import * as esbuild from 'esbuild';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
-/**
- * @type {import('esbuild').Plugin}
- */
+/** @type {import('esbuild').Plugin} */
 const esbuildProblemMatcherPlugin = {
 	name: 'esbuild-problem-matcher',
 
@@ -30,24 +28,24 @@ const extensionConfig = {
 		esbuildProblemMatcherPlugin
 	],
 	entryPoints: ["src/extension.ts"],
-    bundle: true,
-    format: "cjs",
-    minify: production,
-    minifyWhitespace: production,
-    minifyIdentifiers: production,
-    minifySyntax: production,
-    treeShaking: true,
-    sourcemap: !production,
-    sourcesContent: false,
-    platform: "node",
-    target: "node18",
-    outfile: "out/extension.js",
-    external: ["vscode", "ws"],
-    logLevel: "info",
-    legalComments: "none",
-    drop: production ? ["debugger"] : [],
-    metafile: true,
-    keepNames: false,
+	bundle: true,
+	format: "cjs",
+	minify: production,
+	minifyWhitespace: production,
+	minifyIdentifiers: production,
+	minifySyntax: production,
+	treeShaking: true,
+	sourcemap: !production,
+	sourcesContent: false,
+	platform: "node",
+	target: "node18",
+	outfile: "out/extension.js",
+	external: ["vscode", "ws"],
+	logLevel: "info",
+	legalComments: "none",
+	drop: production ? ["debugger"] : [],
+	metafile: true,
+	keepNames: false,
 };
 
 // Webview bundle — CodeMirror 6 JSON editor (runs in the browser sandbox)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4 — 2026-05-20
+
+- Extension version is now shown at the bottom of the side panel.
+- Removed leftover unused files from a previous editor experiment, reducing extension size.
+
 ## 0.1.3 — 2026-04-23
 
 - Fixed error responses (4xx/5xx) not showing body and headers in the detail panel — the `error_captured` handler now correctly stores and displays response body and headers from Dio errors.

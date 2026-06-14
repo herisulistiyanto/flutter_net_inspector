@@ -16,7 +16,10 @@ export class ActivityBarViewProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private _stateChangeDisposable?: vscode.Disposable;
 
-  constructor(private readonly server: InspectorServer) {}
+  constructor(
+    private readonly server: InspectorServer,
+    private readonly version: string,
+  ) {}
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -230,6 +233,14 @@ export class ActivityBarViewProvider implements vscode.WebviewViewProvider {
     .hint.err { color: var(--vscode-errorForeground, #f48771); }
 
     #applyBtn { width: 100%; }
+
+    .version-label {
+      margin-top: 12px;
+      font-size: 10px;
+      color: var(--vscode-descriptionForeground);
+      text-align: center;
+      opacity: 0.6;
+    }
   </style>
 </head>
 <body>
@@ -262,6 +273,8 @@ export class ActivityBarViewProvider implements vscode.WebviewViewProvider {
   </div>
   <p class="hint" id="hint">${running ? "Stop the server to edit settings." : ""}</p>
   <button class="btn-primary" id="applyBtn" disabled>Apply</button>
+
+  <p class="version-label">v${this.version}</p>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
